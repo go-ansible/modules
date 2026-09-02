@@ -11,9 +11,10 @@ func TestRegistryDefault(t *testing.T) {
 	r := Default()
 	want := []string{
 		"apt", "assert", "command", "copy", "cron", "debug", "fail",
-		"file", "git", "group", "lineinfile", "pip", "replace",
-		"service", "set_fact", "shell", "stat", "systemd", "template",
-		"user",
+		"fetch", "file", "find", "get_url", "getent", "git", "group",
+		"hostname", "lineinfile", "ping", "pip", "replace",
+		"service", "set_fact", "shell", "slurp", "stat", "systemd",
+		"tempfile", "template", "uri", "user", "wait_for",
 	}
 	names := r.Names()
 	if len(names) != len(want) {

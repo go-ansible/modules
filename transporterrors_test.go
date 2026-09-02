@@ -39,6 +39,16 @@ func TestTransportErrorsPropagate(t *testing.T) {
 		{"apt", moduleApt, map[string]any{"name": "n"}},
 		{"pip", modulePip, map[string]any{"name": "n"}},
 		{"git", moduleGit, map[string]any{"repo": "r", "dest": "/x"}},
+		{"ping", modulePing, map[string]any{}},
+		{"slurp", moduleSlurp, map[string]any{"src": "/x"}},
+		{"tempfile", moduleTempfile, map[string]any{}},
+		{"fetch", moduleFetch, map[string]any{"src": "/x", "dest": "/y"}},
+		{"find", moduleFind, map[string]any{"paths": "/x"}},
+		{"get_url", moduleGetURL, map[string]any{"url": "http://x", "dest": "/y"}},
+		{"uri", moduleURI, map[string]any{"url": "http://x"}},
+		{"wait_for", moduleWaitFor, map[string]any{"port": 22}},
+		{"hostname", moduleHostname, map[string]any{"name": "x"}},
+		{"getent", moduleGetent, map[string]any{"database": "passwd"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
