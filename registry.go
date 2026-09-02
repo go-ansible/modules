@@ -1,0 +1,25 @@
+package modules
+
+// registerBuiltins registers this package's built-in module set onto r.
+func registerBuiltins(r *Registry) {
+	r.Register("command", moduleCommand)
+	r.Register("shell", moduleShell)
+	r.Register("copy", moduleCopy)
+	r.Register("file", moduleFile)
+	r.Register("template", moduleTemplate)
+	r.Register("lineinfile", moduleLineinfile)
+	r.Register("replace", moduleReplace)
+	r.Register("stat", moduleStat)
+	r.Register("debug", moduleDebug)
+	r.Register("assert", moduleAssert)
+	r.Register("fail", moduleFail)
+	r.Register("set_fact", moduleSetFact)
+	r.Register("cron", moduleCron)
+	r.Register("user", moduleUser)
+	r.Register("group", moduleGroup)
+	r.Register("systemd", moduleSystemd)
+	r.Register("service", moduleSystemd) // "service" is systemd's classic alias on modern distros
+	r.Register("apt", moduleApt)
+	r.Register("pip", modulePip)
+	r.Register("git", moduleGit)
+}
