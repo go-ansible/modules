@@ -1,5 +1,7 @@
 package modules
 
+//go:generate go run ./internal/gendocs
+
 // registerBuiltins registers this package's built-in module set onto r.
 func registerBuiltins(r *Registry) {
 	r.Register("command", moduleCommand)
