@@ -10,10 +10,12 @@ import (
 func TestRegistryDefault(t *testing.T) {
 	r := Default()
 	want := []string{
-		"apt", "assert", "command", "copy", "cron", "debug", "fail",
-		"fetch", "file", "find", "get_url", "getent", "git", "group",
-		"hostname", "lineinfile", "ping", "pip", "replace",
-		"service", "set_fact", "shell", "slurp", "stat", "systemd",
+		"apt", "apt_key", "apt_repository", "assert", "blockinfile",
+		"command", "copy", "cron", "debconf", "debug", "dnf", "dnf5",
+		"dpkg_selections", "fail", "fetch", "file", "find", "get_url",
+		"getent", "git", "group", "hostname", "lineinfile", "package",
+		"package_facts", "ping", "pip", "replace", "service",
+		"service_facts", "set_fact", "shell", "slurp", "stat", "systemd",
 		"tempfile", "template", "uri", "user", "wait_for",
 	}
 	names := r.Names()
