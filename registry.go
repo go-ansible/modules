@@ -42,4 +42,34 @@ func registerBuiltins(r *Registry) {
 	r.Register("package", modulePackage)
 	r.Register("package_facts", modulePackageFacts)
 	r.Register("service_facts", moduleServiceFacts)
+
+	// Batch 3: the remaining ansible.builtin modules/directives that
+	// belong in this package (see the package-level module count note
+	// in the project's PR history for the 9 engine-level directives —
+	// add_host, group_by, import_playbook, import_role, import_tasks,
+	// include_role, include_tasks, include_vars, meta — that are
+	// deliberately NOT registered here, since they're handled directly
+	// by go-ansible/playbook's engine, not by a module).
+	r.Register("assemble", moduleAssemble)
+	r.Register("async_status", moduleAsyncStatus)
+	r.Register("deb822_repository", moduleDeb822Repository)
+	r.Register("expect", moduleExpect)
+	r.Register("gather_facts", moduleGatherFacts)
+	r.Register("iptables", moduleIptables)
+	r.Register("known_hosts", moduleKnownHosts)
+	r.Register("mount_facts", moduleMountFacts)
+	r.Register("pause", modulePause)
+	r.Register("raw", moduleRaw)
+	r.Register("reboot", moduleReboot)
+	r.Register("rpm_key", moduleRpmKey)
+	r.Register("script", moduleScript)
+	r.Register("set_stats", moduleSetStats)
+	r.Register("setup", moduleSetup)
+	r.Register("subversion", moduleSubversion)
+	r.Register("systemd_service", moduleSystemd) // "systemd_service" is systemd's canonical ansible-core name; "systemd"/"service" (registered above) are its own aliases
+	r.Register("sysvinit", moduleSysvinit)
+	r.Register("unarchive", moduleUnarchive)
+	r.Register("validate_argument_spec", moduleValidateArgumentSpec)
+	r.Register("wait_for_connection", moduleWaitForConnection)
+	r.Register("yum_repository", moduleYumRepository)
 }

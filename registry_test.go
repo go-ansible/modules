@@ -10,13 +10,19 @@ import (
 func TestRegistryDefault(t *testing.T) {
 	r := Default()
 	want := []string{
-		"apt", "apt_key", "apt_repository", "assert", "blockinfile",
-		"command", "copy", "cron", "debconf", "debug", "dnf", "dnf5",
-		"dpkg_selections", "fail", "fetch", "file", "find", "get_url",
-		"getent", "git", "group", "hostname", "lineinfile", "package",
-		"package_facts", "ping", "pip", "replace", "service",
-		"service_facts", "set_fact", "shell", "slurp", "stat", "systemd",
-		"tempfile", "template", "uri", "user", "wait_for",
+		"apt", "apt_key", "apt_repository", "assemble", "assert",
+		"async_status", "blockinfile", "command", "copy", "cron",
+		"deb822_repository", "debconf", "debug", "dnf", "dnf5",
+		"dpkg_selections", "expect", "fail", "fetch", "file", "find",
+		"gather_facts", "get_url", "getent", "git", "group", "hostname",
+		"iptables", "known_hosts", "lineinfile", "mount_facts", "package",
+		"package_facts", "pause", "ping", "pip", "raw", "reboot",
+		"replace", "rpm_key", "script", "service", "service_facts",
+		"set_fact", "set_stats", "setup", "shell", "slurp", "stat",
+		"subversion", "systemd", "systemd_service", "sysvinit",
+		"tempfile", "template", "unarchive", "uri", "user",
+		"validate_argument_spec", "wait_for", "wait_for_connection",
+		"yum_repository",
 	}
 	names := r.Names()
 	if len(names) != len(want) {

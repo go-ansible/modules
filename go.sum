@@ -8,6 +8,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
+github.com/go-ansible/facts v0.1.0 h1:kYlBfikwXJrqBLMZ1ILjrksWtD1ba5zre1CjdfeWDEc=
+github.com/go-ansible/facts v0.1.0/go.mod h1:7aH+A+431FOxQNA90kqB8aEL0BnZ5royRPGj2wOkf3w=
 github.com/go-ansible/template v0.1.0 h1:2G9rLQtqLVi3skiGMqYCzsuCzoXlj+YtdgFkgO2i0N4=
 github.com/go-ansible/template v0.1.0/go.mod h1:HrlSfedZUJhxY2dDTY+Q2J+cnHJmhXOIn+Ddn0MFcD0=
 github.com/go-logr/logr v1.4.2 h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=
