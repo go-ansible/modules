@@ -381,4 +381,85 @@ func registerBuiltins(r *Registry) {
 	r.Register("redhat_subscription", moduleRedhatSubscription)
 	r.Register("rhsm_release", moduleRhsmRelease)
 	r.Register("rhsm_repository", moduleRhsmRepository)
+
+	// community.general collection (batch 5, 50 more of 577 modules): a
+	// fifth curated slice, same exclusion rationale as batches 1-4 above
+	// (no SaaS-API wrappers, no cloud-VPS/hardware providers). By this
+	// batch the remaining pool skewed heavily toward excluded categories
+	// (keycloak/gitlab/jenkins/github/scaleway/hwc/oneview/utm/redfish
+	// families), so curation required more deliberate searching.
+
+	// AIX.
+	r.Register("aix_devices", moduleAixDevices)
+	r.Register("aix_filesystem", moduleAixFilesystem)
+	r.Register("aix_inittab", moduleAixInittab)
+	r.Register("aix_lvg", moduleAixLvg)
+	r.Register("aix_lvol", moduleAixLvol)
+
+	// More OS-specific system tools.
+	r.Register("beadm", moduleBeadm)
+	r.Register("bootc_manage", moduleBootcManage)
+	r.Register("mksysb", moduleMksysb)
+	r.Register("rpm_ostree_pkg", moduleRpmOstreePkg)
+	r.Register("openwrt_init", moduleOpenwrtInit)
+	r.Register("awall", moduleAwall)
+	r.Register("ip_netns", moduleIPNetns)
+	r.Register("dpkg_divert", moduleDpkgDivert)
+
+	// Elastic Stack plugin managers.
+	r.Register("elasticsearch_plugin", moduleElasticsearchPlugin)
+	r.Register("logstash_plugin", moduleLogstashPlugin)
+	r.Register("kibana_plugin", moduleKibanaPlugin)
+
+	// InfluxDB.
+	r.Register("influxdb_database", moduleInfluxdbDatabase)
+	r.Register("influxdb_query", moduleInfluxdbQuery)
+	r.Register("influxdb_retention_policy", moduleInfluxdbRetentionPolicy)
+	r.Register("influxdb_user", moduleInfluxdbUser)
+	r.Register("influxdb_write", moduleInfluxdbWrite)
+
+	// Icinga2.
+	r.Register("icinga2_feature", moduleIcinga2Feature)
+	r.Register("icinga2_host", moduleIcinga2Host)
+	r.Register("icinga2_downtime", moduleIcinga2Downtime)
+
+	// Kopia backup.
+	r.Register("kopia_repository", moduleKopiaRepository)
+	r.Register("kopia_repository_info", moduleKopiaRepositoryInfo)
+
+	// Version control.
+	r.Register("bzr", moduleBzr)
+	r.Register("hg", moduleHg)
+
+	// Web/app servers.
+	r.Register("apache2_module", moduleApache2Module)
+	r.Register("apache2_mod_proxy", moduleApache2ModProxy)
+	r.Register("jboss", moduleJboss)
+
+	// LDAP/directory.
+	r.Register("ldap_inc", moduleLdapInc)
+	r.Register("opendj_backendprop", moduleOpendjBackendprop)
+
+	// ISO tools.
+	r.Register("iso_create", moduleIsoCreate)
+	r.Register("iso_customize", moduleIsoCustomize)
+	r.Register("iso_extract", moduleIsoExtract)
+
+	// Desktop config.
+	r.Register("gconftool2", moduleGconftool2)
+	r.Register("gconftool2_info", moduleGconftool2Info)
+
+	// Misc admin.
+	r.Register("android_sdk", moduleAndroidSdk)
+	r.Register("copr", moduleCopr)
+	r.Register("etcd3", moduleEtcd3)
+	r.Register("gunicorn", moduleGunicorn)
+	r.Register("layman", moduleLayman)
+	r.Register("lbu", moduleLbu)
+	r.Register("make", moduleMake)
+	r.Register("mqtt", moduleMqtt)
+	r.Register("omapi_host", moduleOmapiHost)
+	r.Register("pmem", modulePmem)
+	r.Register("shutdown", moduleShutdown)
+	r.Register("ejabberd_user", moduleEjabberdUser)
 }
