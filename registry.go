@@ -235,4 +235,78 @@ func registerBuiltins(r *Registry) {
 	r.Register("pacemaker_cluster", modulePacemakerCluster)
 	r.Register("pacemaker_resource", modulePacemakerResource)
 	r.Register("pacemaker_info", modulePacemakerInfo)
+
+	// community.general collection (batch 3, 50 more of 577 modules): a
+	// third curated slice, same exclusion rationale as batches 1-2
+	// above (no SaaS-API wrappers, no cloud-VPS/hardware providers).
+
+	// Storage/ZFS facts.
+	r.Register("zfs_facts", moduleZfsFacts)
+	r.Register("zpool_facts", moduleZpoolFacts)
+	r.Register("zfs_delegate_admin", moduleZfsDelegateAdmin)
+	r.Register("xfs_quota", moduleXfsQuota)
+
+	// More package managers.
+	r.Register("pkg5", modulePkg5)
+	r.Register("pkg5_publisher", modulePkg5Publisher)
+	r.Register("pkgutil", modulePkgutil)
+	r.Register("portage", modulePortage)
+	r.Register("portinstall", modulePortinstall)
+	r.Register("installp", moduleInstallp)
+	r.Register("svr4pkg", moduleSvr4pkg)
+	r.Register("pipx", modulePipx)
+	r.Register("pipx_info", modulePipxInfo)
+
+	// LDAP.
+	r.Register("ldap_attrs", moduleLdapAttrs)
+	r.Register("ldap_entry", moduleLdapEntry)
+	r.Register("ldap_passwd", moduleLdapPasswd)
+	r.Register("ldap_search", moduleLdapSearch)
+
+	// FreeIPA.
+	r.Register("ipa_user", moduleIpaUser)
+	r.Register("ipa_group", moduleIpaGroup)
+	r.Register("ipa_host", moduleIpaHost)
+	r.Register("ipa_hostgroup", moduleIpaHostgroup)
+	r.Register("ipa_dnsrecord", moduleIpaDnsrecord)
+	r.Register("ipa_dnszone", moduleIpaDnszone)
+	r.Register("ipa_sudorule", moduleIpaSudorule)
+	r.Register("ipa_hbacrule", moduleIpaHbacrule)
+	r.Register("ipa_role", moduleIpaRole)
+	r.Register("ipa_service", moduleIpaService)
+
+	// Redis.
+	r.Register("redis", moduleRedis)
+	r.Register("redis_info", moduleRedisInfo)
+	r.Register("redis_data", moduleRedisData)
+	r.Register("redis_data_info", moduleRedisDataInfo)
+	r.Register("redis_data_incr", moduleRedisDataIncr)
+
+	// Consul KV.
+	r.Register("consul_kv", moduleConsulKv)
+	r.Register("consul_kv_info", moduleConsulKvInfo)
+
+	// Kerberos.
+	r.Register("krb_ticket", moduleKrbTicket)
+
+	// Misc admin.
+	r.Register("open_iscsi", moduleOpenIscsi)
+	r.Register("nagios", moduleNagios)
+	r.Register("deploy_helper", moduleDeployHelper)
+	r.Register("haproxy", moduleHaproxy)
+	r.Register("terraform", moduleTerraform)
+
+	// Desktop/system config.
+	r.Register("dconf", moduleDconf)
+	r.Register("gio_mime", moduleGioMime)
+	r.Register("xdg_mime", moduleXdgMime)
+	r.Register("osx_defaults", moduleOsxDefaults)
+	r.Register("launchd", moduleLaunchd)
+	r.Register("kdeconfig", moduleKdeconfig)
+	r.Register("java_keystore", moduleJavaKeystore)
+
+	// More read-only facts.
+	r.Register("snmp_facts", moduleSNMPFacts)
+	r.Register("lldp_facts", moduleLLDPFacts)
+	r.Register("pids", modulePids)
 }
