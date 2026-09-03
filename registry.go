@@ -167,4 +167,72 @@ func registerBuiltins(r *Registry) {
 	r.Register("htpasswd", moduleHtpasswd)
 	r.Register("java_cert", moduleJavaCert)
 	r.Register("mail", moduleMail)
+
+	// community.general collection (batch 2, 50 more of 577 modules): a
+	// second curated slice, same exclusion rationale as batch 1 above
+	// (no SaaS-API wrappers, no cloud-VPS providers).
+
+	// Package managers (more distros).
+	r.Register("zypper", moduleZypper)
+	r.Register("zypper_repository", moduleZypperRepository)
+	r.Register("zypper_repository_info", moduleZypperRepositoryInfo)
+	r.Register("dnf_versionlock", moduleDnfVersionlock)
+	r.Register("yum_versionlock", moduleYumVersionlock)
+	r.Register("dnf_config_manager", moduleDnfConfigManager)
+	r.Register("macports", moduleMacports)
+	r.Register("pkgin", modulePkgin)
+	r.Register("pkgng", modulePkgng)
+	r.Register("xbps", moduleXbps)
+	r.Register("slackpkg", moduleSlackpkg)
+	r.Register("openbsd_pkg", moduleOpenbsdPkg)
+
+	// Filesystem/storage.
+	r.Register("filesystem", moduleFilesystem)
+	r.Register("parted", moduleParted)
+	r.Register("lvg", moduleLvg)
+	r.Register("lvg_rename", moduleLvgRename)
+	r.Register("lvol", moduleLvol)
+	r.Register("lvm_pv", moduleLvmPv)
+	r.Register("lvm_pv_move_data", moduleLvmPvMoveData)
+	r.Register("btrfs_subvolume", moduleBtrfsSubvolume)
+	r.Register("btrfs_info", moduleBtrfsInfo)
+	r.Register("zfs", moduleZfs)
+	r.Register("zpool", moduleZpool)
+	r.Register("vdo", moduleVdo)
+
+	// Networking.
+	r.Register("nmcli", moduleNmcli)
+	r.Register("interfaces_file", moduleInterfacesFile)
+	r.Register("iptables_state", moduleIptablesState)
+	r.Register("ufw", moduleUfw)
+	r.Register("nsupdate", moduleNsupdate)
+	r.Register("wakeonlan", moduleWakeonlan)
+
+	// System/service management.
+	r.Register("puppet", modulePuppet)
+	r.Register("monit", moduleMonit)
+	r.Register("runit", moduleRunit)
+	r.Register("sysrc", moduleSysrc)
+	r.Register("syspatch", moduleSyspatch)
+	r.Register("homectl", moduleHomectl)
+	r.Register("systemd_info", moduleSystemdInfo)
+	r.Register("listen_ports_facts", moduleListenPortsFacts)
+	r.Register("usb_facts", moduleUsbFacts)
+
+	// SELinux.
+	r.Register("selinux_permissive", moduleSelinuxPermissive)
+	r.Register("sefcontext", moduleSefcontext)
+	r.Register("selogin", moduleSelogin)
+	r.Register("seport", moduleSeport)
+
+	// Read-only facts.
+	r.Register("xml_info", moduleXmlInfo)
+	r.Register("git_config_info", moduleGitConfigInfo)
+	r.Register("pip_package_info", modulePipPackageInfo)
+	r.Register("python_requirements_info", modulePythonRequirementsInfo)
+
+	// Cluster (Pacemaker).
+	r.Register("pacemaker_cluster", modulePacemakerCluster)
+	r.Register("pacemaker_resource", modulePacemakerResource)
+	r.Register("pacemaker_info", modulePacemakerInfo)
 }
