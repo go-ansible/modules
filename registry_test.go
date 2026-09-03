@@ -10,19 +10,21 @@ import (
 func TestRegistryDefault(t *testing.T) {
 	r := Default()
 	want := []string{
-		"apt", "apt_key", "apt_repository", "assemble", "assert",
-		"async_status", "blockinfile", "command", "copy", "cron",
-		"deb822_repository", "debconf", "debug", "dnf", "dnf5",
-		"dpkg_selections", "expect", "fail", "fetch", "file", "find",
-		"gather_facts", "get_url", "getent", "git", "group", "hostname",
-		"iptables", "known_hosts", "lineinfile", "mount_facts", "package",
-		"package_facts", "pause", "ping", "pip", "raw", "reboot",
-		"replace", "rpm_key", "script", "service", "service_facts",
+		"acl", "apt", "apt_key", "apt_repository", "assemble", "assert",
+		"async_status", "at", "authorized_key", "blockinfile", "command",
+		"copy", "cron", "deb822_repository", "debconf", "debug", "dnf",
+		"dnf5", "dpkg_selections", "expect", "fail", "fetch", "file",
+		"find", "firewalld", "firewalld_info", "gather_facts", "get_url",
+		"getent", "git", "group", "hostname", "iptables", "known_hosts",
+		"lineinfile", "mount", "mount_facts", "package", "package_facts",
+		"patch", "pause", "ping", "pip", "raw", "reboot", "replace",
+		"rhel_facts", "rhel_rpm_ostree", "rpm_key", "rpm_ostree_upgrade",
+		"script", "seboolean", "selinux", "service", "service_facts",
 		"set_fact", "set_stats", "setup", "shell", "slurp", "stat",
-		"subversion", "systemd", "systemd_service", "sysvinit",
-		"tempfile", "template", "unarchive", "uri", "user",
-		"validate_argument_spec", "wait_for", "wait_for_connection",
-		"yum_repository",
+		"subversion", "synchronize", "sysctl", "systemd",
+		"systemd_service", "sysvinit", "tempfile", "template",
+		"unarchive", "uri", "user", "validate_argument_spec", "wait_for",
+		"wait_for_connection", "yum_repository",
 	}
 	names := r.Names()
 	if len(names) != len(want) {
