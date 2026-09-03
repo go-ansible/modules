@@ -74,4 +74,29 @@ func registerBuiltins(r *Registry) {
 	r.Register("validate_argument_spec", moduleValidateArgumentSpec)
 	r.Register("wait_for_connection", moduleWaitForConnection)
 	r.Register("yum_repository", moduleYumRepository)
+
+	// ansible.posix collection (2.2.2): shell-command-based modules that
+	// operate on a real machine, fitting this port's architecture the
+	// same way ansible.builtin's own modules do. Cloud-provider
+	// collections are out of scope (they need real API client SDKs, not
+	// shell composition over a Connection) — see this batch's PR
+	// description for the full rationale.
+	r.Register("acl", moduleAcl)
+	r.Register("at", moduleAt)
+	r.Register("authorized_key", moduleAuthorizedKey)
+	r.Register("firewalld", moduleFirewalld)
+	r.Register("firewalld_info", moduleFirewalldInfo)
+	r.Register("mount", moduleMount)
+	r.Register("patch", modulePatch)
+	r.Register("rhel_facts", moduleRhelFacts)
+	r.Register("rhel_rpm_ostree", moduleRhelRpmOstree)
+	r.Register("rpm_ostree_upgrade", moduleRpmOstreeUpgrade)
+	r.Register("seboolean", moduleSeboolean)
+	r.Register("selinux", moduleSelinux)
+	// synchronize is registered as an honest, always-failing stub — see
+	// synchronize.go's doc comment for why a partial implementation was
+	// rejected (the same "fail loud, not silently wrong" convention
+	// async_status.go and pause.go's no-duration form already use).
+	r.Register("synchronize", moduleSynchronize)
+	r.Register("sysctl", moduleSysctl)
 }
