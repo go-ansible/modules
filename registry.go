@@ -309,4 +309,76 @@ func registerBuiltins(r *Registry) {
 	r.Register("snmp_facts", moduleSNMPFacts)
 	r.Register("lldp_facts", moduleLLDPFacts)
 	r.Register("pids", modulePids)
+
+	// community.general collection (batch 4, 50 more of 577 modules): a
+	// fourth curated slice, same exclusion rationale as batches 1-3
+	// above (no SaaS-API wrappers, no cloud-VPS/hardware providers).
+
+	// More FreeIPA.
+	r.Register("ipa_config", moduleIpaConfig)
+	r.Register("ipa_getkeytab", moduleIpaGetkeytab)
+	r.Register("ipa_otpconfig", moduleIpaOtpconfig)
+	r.Register("ipa_otptoken", moduleIpaOtptoken)
+	r.Register("ipa_pwpolicy", moduleIpaPwpolicy)
+	r.Register("ipa_subca", moduleIpaSubca)
+	r.Register("ipa_sudocmd", moduleIpaSudocmd)
+	r.Register("ipa_sudocmdgroup", moduleIpaSudocmdgroup)
+	r.Register("ipa_vault", moduleIpaVault)
+
+	// More facts.
+	r.Register("facter_facts", moduleFacterFacts)
+	r.Register("ohai", moduleOhai)
+	r.Register("cloud_init_data_facts", moduleCloudInitDataFacts)
+	r.Register("sssd_info", moduleSssdInfo)
+	r.Register("nginx_status_info", moduleNginxStatusInfo)
+
+	// More Consul.
+	r.Register("consul", moduleConsul)
+	r.Register("consul_agent_check", moduleConsulAgentCheck)
+	r.Register("consul_agent_service", moduleConsulAgentService)
+	r.Register("consul_acl_bootstrap", moduleConsulACLBootstrap)
+	r.Register("consul_auth_method", moduleConsulAuthMethod)
+	r.Register("consul_binding_rule", moduleConsulBindingRule)
+	r.Register("consul_policy", moduleConsulPolicy)
+	r.Register("consul_role", moduleConsulRole)
+	r.Register("consul_session", moduleConsulSession)
+	r.Register("consul_token", moduleConsulToken)
+
+	// More desktop/system config.
+	r.Register("systemd_creds_decrypt", moduleSystemdCredsDecrypt)
+	r.Register("systemd_creds_encrypt", moduleSystemdCredsEncrypt)
+	r.Register("xfconf", moduleXfconf)
+	r.Register("xfconf_info", moduleXfconfInfo)
+
+	// LXD/LXC containers.
+	r.Register("lxd_container", moduleLxdContainer)
+	r.Register("lxd_profile", moduleLxdProfile)
+	r.Register("lxd_project", moduleLxdProject)
+	r.Register("lxd_storage_pool_info", moduleLxdStoragePoolInfo)
+	r.Register("lxd_storage_volume_info", moduleLxdStorageVolumeInfo)
+	r.Register("lxc_container", moduleLxcContainer)
+
+	// HashiCorp Nomad.
+	r.Register("nomad_job", moduleNomadJob)
+	r.Register("nomad_job_info", moduleNomadJobInfo)
+	r.Register("nomad_token", moduleNomadToken)
+
+	// Misc.
+	r.Register("znode", moduleZnode)
+	r.Register("uv_python", moduleUvPython)
+	r.Register("mas", moduleMas)
+
+	// Database admin.
+	r.Register("mssql_db", moduleMssqlDb)
+	r.Register("mssql_script", moduleMssqlScript)
+	r.Register("vertica_configuration", moduleVerticaConfiguration)
+	r.Register("vertica_info", moduleVerticaInfo)
+	r.Register("vertica_role", moduleVerticaRole)
+	r.Register("vertica_schema", moduleVerticaSchema)
+	r.Register("vertica_user", moduleVerticaUser)
+
+	// RHEL subscription management.
+	r.Register("redhat_subscription", moduleRedhatSubscription)
+	r.Register("rhsm_release", moduleRhsmRelease)
+	r.Register("rhsm_repository", moduleRhsmRepository)
 }
