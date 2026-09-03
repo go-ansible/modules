@@ -99,4 +99,72 @@ func registerBuiltins(r *Registry) {
 	// async_status.go and pause.go's no-duration form already use).
 	r.Register("synchronize", moduleSynchronize)
 	r.Register("sysctl", moduleSysctl)
+
+	// community.general collection (batch 1, 50 of 577 modules): a
+	// curated first slice deliberately excluding SaaS-API wrappers
+	// (Slack/PagerDuty/GitLab/Jenkins/etc.) and cloud-VPS providers
+	// (Scaleway/Linode/OpenNebula/etc.), which need a fundamentally
+	// different architecture (real API client SDKs, not shell
+	// composition over a Connection) — same rationale as the
+	// ansible.posix batch's own cloud-collection exclusion above.
+
+	// Package/dependency managers.
+	r.Register("apk", moduleApk)
+	r.Register("homebrew", moduleHomebrew)
+	r.Register("homebrew_cask", moduleHomebrewCask)
+	r.Register("homebrew_tap", moduleHomebrewTap)
+	r.Register("homebrew_services", moduleHomebrewServices)
+	r.Register("snap", moduleSnap)
+	r.Register("snap_alias", moduleSnapAlias)
+	r.Register("flatpak", moduleFlatpak)
+	r.Register("flatpak_remote", moduleFlatpakRemote)
+	r.Register("pacman", modulePacman)
+	r.Register("pacman_key", modulePacmanKey)
+	r.Register("npm", moduleNpm)
+	r.Register("yarn", moduleYarn)
+	r.Register("pnpm", modulePnpm)
+	r.Register("gem", moduleGem)
+	r.Register("bundler", moduleBundler)
+	r.Register("composer", moduleComposer)
+
+	// Language/dev tooling.
+	r.Register("cpanm", moduleCpanm)
+	r.Register("cargo", moduleCargo)
+	r.Register("golang_package", moduleGolangPackage)
+	r.Register("maven_artifact", moduleMavenArtifact)
+	r.Register("pear", modulePear)
+	r.Register("opkg", moduleOpkg)
+	r.Register("django_command", moduleDjangoCommand)
+	r.Register("django_manage", moduleDjangoManage)
+
+	// Filesystem/data.
+	r.Register("archive", moduleArchive)
+	r.Register("decompress", moduleDecompress)
+	r.Register("filesize", moduleFilesize)
+	r.Register("ini_file", moduleIniFile)
+	r.Register("xml", moduleXml)
+	r.Register("read_csv", moduleReadCsv)
+	r.Register("alternatives", moduleAlternatives)
+	r.Register("capabilities", moduleCapabilities)
+	r.Register("xattr", moduleXattr)
+	r.Register("crypttab", moduleCrypttab)
+
+	// System config.
+	r.Register("sudoers", moduleSudoers)
+	r.Register("pam_limits", modulePamLimits)
+	r.Register("pamd", modulePamd)
+	r.Register("timezone", moduleTimezone)
+	r.Register("locale_gen", moduleLocaleGen)
+	r.Register("modprobe", moduleModprobe)
+	r.Register("kernel_blacklist", moduleKernelBlacklist)
+	r.Register("cronvar", moduleCronvar)
+	r.Register("logrotate", moduleLogrotate)
+	r.Register("supervisorctl", moduleSupervisorctl)
+
+	// Misc.
+	r.Register("git_config", moduleGitConfig)
+	r.Register("ssh_config", moduleSSHConfig)
+	r.Register("htpasswd", moduleHtpasswd)
+	r.Register("java_cert", moduleJavaCert)
+	r.Register("mail", moduleMail)
 }
