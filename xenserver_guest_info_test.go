@@ -48,7 +48,7 @@ func TestModuleXenserverGuestInfoNotFound(t *testing.T) {
 func TestModuleXenserverGuestInfo(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"xe vm-list name-label=myvm params=uuid --minimal": {RC: 0, Stdout: "vm-uuid-1"},
-		"xe vm-param-list uuid=vm-uuid-1":                   {RC: 0, Stdout: vmParamListStdout()},
+		"xe vm-param-list uuid=vm-uuid-1":                  {RC: 0, Stdout: vmParamListStdout()},
 	})
 	res, err := moduleXenserverGuestInfo(context.Background(), conn, map[string]any{"name": "myvm"})
 	if err != nil {

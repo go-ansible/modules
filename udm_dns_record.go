@@ -122,7 +122,7 @@ func moduleUdmDnsRecord(ctx context.Context, conn remoteexec.Connection, args ma
 		if err := udmRemove(ctx, conn, modulePath, obj.DN); err != nil {
 			return Result{}, err
 		}
-		return Changed(name + " removed").WithExtra("container", zoneDN), nil
+		return Changed(name+" removed").WithExtra("container", zoneDN), nil
 	}
 
 	dataMap, _ := args["data"].(map[string]any)
@@ -138,16 +138,16 @@ func moduleUdmDnsRecord(ctx context.Context, conn remoteexec.Connection, args ma
 		if err := udmCreate(ctx, conn, modulePath, scope, desired); err != nil {
 			return Result{}, err
 		}
-		return Changed(name + " created").WithExtra("container", zoneDN), nil
+		return Changed(name+" created").WithExtra("container", zoneDN), nil
 	}
 	changed, err := udmReconcile(ctx, conn, modulePath, obj, desired)
 	if err != nil {
 		return Result{}, err
 	}
 	if !changed {
-		return Ok(name + " already up to date").WithExtra("container", zoneDN), nil
+		return Ok(name+" already up to date").WithExtra("container", zoneDN), nil
 	}
-	return Changed(name + " updated").WithExtra("container", zoneDN), nil
+	return Changed(name+" updated").WithExtra("container", zoneDN), nil
 }
 
 // udmNormalizeDnsData converts a `data` module argument into

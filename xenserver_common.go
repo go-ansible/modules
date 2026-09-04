@@ -292,13 +292,13 @@ func xeVMFacts(ctx context.Context, conn remoteexec.Connection, args map[string]
 			"num_cpu_cores_per_socket": numCPUCores,
 			"memory_mb":                memoryMB,
 		},
-		"platform":             stringMapToAny(platform),
-		"other_config":         stringMapToAny(otherConfig),
-		"xenstore_data":        stringMapToAny(xenstoreData),
-		"customization_agent":  "custom",
-		"disks":                []any{},
-		"cdrom":                map[string]any{},
-		"networks":             []any{},
+		"platform":            stringMapToAny(platform),
+		"other_config":        stringMapToAny(otherConfig),
+		"xenstore_data":       stringMapToAny(xenstoreData),
+		"customization_agent": "custom",
+		"disks":               []any{},
+		"cdrom":               map[string]any{},
+		"networks":            []any{},
 	}
 
 	for _, vbdUUID := range xeParseList(vm["VBDs"]) {
