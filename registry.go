@@ -567,4 +567,119 @@ func registerBuiltins(r *Registry) {
 	r.Register("say", moduleSay)
 	r.Register("serverless", moduleServerless)
 	r.Register("vmadm", moduleVmadm)
+
+	// community.general collection (batch 8, 89 more of 577 modules): an
+	// eighth curated slice, a further, deliberate narrowing of the
+	// exclusion doctrine — Keycloak, Scaleway, Huawei Cloud, Jenkins,
+	// Equinix Metal, and Linode were reconsidered and INCLUDED because
+	// each ships a genuine official CLI (kcadm.sh/scw/KooCLI("hcloud")/
+	// jenkins-cli.jar/metal/linode-cli respectively), extending the same
+	// CLI-substitution precedent already used for Consul/Redis/
+	// Terraform/Icinga2/Kopia/GitHub(gh)/GitLab(glab). This IS still a
+	// meaningfully bigger doctrine shift than GitHub/GitLab was — three
+	// of these (Scaleway/Huawei Cloud/Equinix Metal) are cloud-VPS
+	// providers, a category this port's own docs named as an exclusion
+	// EXAMPLE since batch 1 — confirmed explicitly with the user before
+	// dispatch, not decided unilaterally.
+
+	// Keycloak, via kcadm.sh.
+	r.Register("keycloak_authentication", moduleKeycloakAuthentication)
+	r.Register("keycloak_authentication_required_actions", moduleKeycloakAuthenticationRequiredActions)
+	r.Register("keycloak_authentication_v2", moduleKeycloakAuthenticationV2)
+	r.Register("keycloak_authz_authorization_scope", moduleKeycloakAuthzAuthorizationScope)
+	r.Register("keycloak_authz_custom_policy", moduleKeycloakAuthzCustomPolicy)
+	r.Register("keycloak_authz_permission", moduleKeycloakAuthzPermission)
+	r.Register("keycloak_authz_permission_info", moduleKeycloakAuthzPermissionInfo)
+	r.Register("keycloak_client", moduleKeycloakClient)
+	r.Register("keycloak_client_rolemapping", moduleKeycloakClientRolemapping)
+	r.Register("keycloak_client_rolescope", moduleKeycloakClientRolescope)
+	r.Register("keycloak_clientscope", moduleKeycloakClientscope)
+	r.Register("keycloak_clientscope_rolemappings", moduleKeycloakClientscopeRolemappings)
+	r.Register("keycloak_clientscope_type", moduleKeycloakClientscopeType)
+	r.Register("keycloak_clientsecret_info", moduleKeycloakClientsecretInfo)
+	r.Register("keycloak_clientsecret_regenerate", moduleKeycloakClientsecretRegenerate)
+	r.Register("keycloak_clienttemplate", moduleKeycloakClienttemplate)
+	r.Register("keycloak_component", moduleKeycloakComponent)
+	r.Register("keycloak_component_info", moduleKeycloakComponentInfo)
+	r.Register("keycloak_group", moduleKeycloakGroup)
+	r.Register("keycloak_identity_provider", moduleKeycloakIdentityProvider)
+	r.Register("keycloak_realm", moduleKeycloakRealm)
+	r.Register("keycloak_realm_info", moduleKeycloakRealmInfo)
+	r.Register("keycloak_realm_key", moduleKeycloakRealmKey)
+	r.Register("keycloak_realm_keys_metadata_info", moduleKeycloakRealmKeysMetadataInfo)
+	r.Register("keycloak_realm_localization", moduleKeycloakRealmLocalization)
+	r.Register("keycloak_realm_rolemapping", moduleKeycloakRealmRolemapping)
+	r.Register("keycloak_realm_users_info", moduleKeycloakRealmUsersInfo)
+	r.Register("keycloak_role", moduleKeycloakRole)
+	r.Register("keycloak_user", moduleKeycloakUser)
+	r.Register("keycloak_user_execute_actions_email", moduleKeycloakUserExecuteActionsEmail)
+	r.Register("keycloak_user_federation", moduleKeycloakUserFederation)
+	r.Register("keycloak_user_rolemapping", moduleKeycloakUserRolemapping)
+	r.Register("keycloak_userprofile", moduleKeycloakUserprofile)
+
+	// Scaleway, via scw.
+	r.Register("scaleway_compute", moduleScalewayCompute)
+	r.Register("scaleway_compute_private_network", moduleScalewayComputePrivateNetwork)
+	r.Register("scaleway_container", moduleScalewayContainer)
+	r.Register("scaleway_container_info", moduleScalewayContainerInfo)
+	r.Register("scaleway_container_namespace", moduleScalewayContainerNamespace)
+	r.Register("scaleway_container_namespace_info", moduleScalewayContainerNamespaceInfo)
+	r.Register("scaleway_container_registry", moduleScalewayContainerRegistry)
+	r.Register("scaleway_container_registry_info", moduleScalewayContainerRegistryInfo)
+	r.Register("scaleway_database_backup", moduleScalewayDatabaseBackup)
+	r.Register("scaleway_function", moduleScalewayFunction)
+	r.Register("scaleway_function_info", moduleScalewayFunctionInfo)
+	r.Register("scaleway_function_namespace", moduleScalewayFunctionNamespace)
+	r.Register("scaleway_function_namespace_info", moduleScalewayFunctionNamespaceInfo)
+	r.Register("scaleway_image_info", moduleScalewayImageInfo)
+	r.Register("scaleway_ip", moduleScalewayIP)
+	r.Register("scaleway_ip_info", moduleScalewayIPInfo)
+	r.Register("scaleway_lb", moduleScalewayLB)
+	r.Register("scaleway_organization_info", moduleScalewayOrganizationInfo)
+	r.Register("scaleway_private_network", moduleScalewayPrivateNetwork)
+	r.Register("scaleway_security_group", moduleScalewaySecurityGroup)
+	r.Register("scaleway_security_group_info", moduleScalewaySecurityGroupInfo)
+	r.Register("scaleway_security_group_rule", moduleScalewaySecurityGroupRule)
+	r.Register("scaleway_server_info", moduleScalewayServerInfo)
+	r.Register("scaleway_snapshot_info", moduleScalewaySnapshotInfo)
+	r.Register("scaleway_sshkey", moduleScalewaySSHKey)
+	r.Register("scaleway_user_data", moduleScalewayUserData)
+	r.Register("scaleway_volume", moduleScalewayVolume)
+	r.Register("scaleway_volume_info", moduleScalewayVolumeInfo)
+
+	// Huawei Cloud, via KooCLI ("hcloud" binary).
+	r.Register("hwc_ecs_instance", moduleHwcEcsInstance)
+	r.Register("hwc_evs_disk", moduleHwcEvsDisk)
+	r.Register("hwc_network_vpc", moduleHwcNetworkVpc)
+	r.Register("hwc_smn_topic", moduleHwcSmnTopic)
+	r.Register("hwc_vpc_eip", moduleHwcVpcEip)
+	r.Register("hwc_vpc_peering_connect", moduleHwcVpcPeeringConnect)
+	r.Register("hwc_vpc_port", moduleHwcVpcPort)
+	r.Register("hwc_vpc_private_ip", moduleHwcVpcPrivateIp)
+	r.Register("hwc_vpc_route", moduleHwcVpcRoute)
+	r.Register("hwc_vpc_security_group", moduleHwcVpcSecurityGroup)
+	r.Register("hwc_vpc_security_group_rule", moduleHwcVpcSecurityGroupRule)
+	r.Register("hwc_vpc_subnet", moduleHwcVpcSubnet)
+
+	// Jenkins, via jenkins-cli.jar.
+	r.Register("jenkins_build", moduleJenkinsBuild)
+	r.Register("jenkins_build_info", moduleJenkinsBuildInfo)
+	r.Register("jenkins_credential", moduleJenkinsCredential)
+	r.Register("jenkins_job", moduleJenkinsJob)
+	r.Register("jenkins_job_info", moduleJenkinsJobInfo)
+	r.Register("jenkins_node", moduleJenkinsNode)
+	r.Register("jenkins_plugin", moduleJenkinsPlugin)
+	r.Register("jenkins_script", moduleJenkinsScript)
+
+	// Equinix Metal / Packet, via the metal CLI.
+	r.Register("packet_device", modulePacketDevice)
+	r.Register("packet_ip_subnet", modulePacketIpSubnet)
+	r.Register("packet_project", modulePacketProject)
+	r.Register("packet_sshkey", modulePacketSshkey)
+	r.Register("packet_volume", modulePacketVolume)
+	r.Register("packet_volume_attachment", modulePacketVolumeAttachment)
+
+	// Linode, via linode-cli.
+	r.Register("linode", moduleLinode)
+	r.Register("linode_v4", moduleLinodeV4)
 }
