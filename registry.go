@@ -682,4 +682,67 @@ func registerBuiltins(r *Registry) {
 	// Linode, via linode-cli.
 	r.Register("linode", moduleLinode)
 	r.Register("linode_v4", moduleLinodeV4)
+
+	// community.general collection (batch 9, 26 more of 577 modules): a
+	// ninth curated slice, applying the same already-confirmed
+	// CLI-substitution principle (batches 7-8) to a final sweep of the
+	// remaining pool. One platform, Pritunl, was investigated and found
+	// to have NO usable official CLI for org/user management (its
+	// `pritunl` CLI is server-lifecycle-only) — those 4 modules are
+	// registered but fail loud rather than fake parity, the same
+	// honest-gap convention packet_volume.go established in batch 8.
+
+	// OpenNebula, via its per-resource CLIs (onehost/oneimage/
+	// onetemplate/onevm/onevnet/oneflow).
+	r.Register("one_host", moduleOneHost)
+	r.Register("one_image", moduleOneImage)
+	r.Register("one_image_info", moduleOneImageInfo)
+	r.Register("one_service", moduleOneService)
+	r.Register("one_template", moduleOneTemplate)
+	r.Register("one_vm", moduleOneVM)
+	r.Register("one_vnet", moduleOneVnet)
+
+	// Rundeck, via the rd CLI.
+	r.Register("rundeck_acl_policy", moduleRundeckACLPolicy)
+	r.Register("rundeck_job_executions_info", moduleRundeckJobExecutionsInfo)
+	r.Register("rundeck_job_run", moduleRundeckJobRun)
+	r.Register("rundeck_project", moduleRundeckProject)
+
+	// More Pacemaker, via pcs.
+	r.Register("pacemaker_stonith", modulePacemakerStonith)
+
+	// Stacki, via the stack CLI.
+	r.Register("stacki_host", moduleStackiHost)
+
+	// Pritunl: investigated, no usable official CLI for org/user
+	// management — these fail loud rather than fake parity.
+	r.Register("pritunl_org", modulePritunlOrg)
+	r.Register("pritunl_org_info", modulePritunlOrgInfo)
+	r.Register("pritunl_user", modulePritunlUser)
+	r.Register("pritunl_user_info", modulePritunlUserInfo)
+
+	// Alibaba Cloud, via aliyun (aliyun-cli).
+	r.Register("ali_instance", moduleAliInstance)
+	r.Register("ali_instance_info", moduleAliInstanceInfo)
+
+	// IBM SoftLayer, via slcli.
+	r.Register("sl_vm", moduleSlVm)
+
+	// 1Password, via the op CLI.
+	r.Register("onepassword_info", moduleOnepasswordInfo)
+
+	// Pulp, via pulp-cli.
+	r.Register("pulp_repo", modulePulpRepo)
+
+	// Twilio, via twilio-cli.
+	r.Register("twilio", moduleTwilio)
+
+	// Aerospike, via asadm.
+	r.Register("aerospike_migrations", moduleAerospikeMigrations)
+
+	// Alerta, via the alerta CLI.
+	r.Register("alerta_customer", moduleAlertaCustomer)
+
+	// DNS, via ipwcli (already CLI-driven in the real module).
+	r.Register("ipwcli_dns", moduleIpwcliDns)
 }
