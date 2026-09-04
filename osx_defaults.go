@@ -403,7 +403,7 @@ func osxDefaultsConvert(typ string, value any) (out any, ferr string) {
 		}
 		return nil, fmt.Sprintf("invalid float value: %v", value)
 	case "array":
-		list := argAnyList(value)
+		list := osxDefaultsAnyList(value)
 		if list == nil {
 			return nil, "invalid value. Expected value to be an array"
 		}
@@ -431,11 +431,11 @@ func isAllDigits(s string) bool {
 	return true
 }
 
-// argAnyList returns v as a []any if it's a list-shaped value (either
-// []any from JSON/YAML decoding, or a native Go slice via reflection-
-// free type switches for the common cases this port's callers produce),
-// or nil otherwise.
-func argAnyList(v any) []any {
+// osxDefaultsAnyList returns v as a []any if it's a list-shaped value
+// (either []any from JSON/YAML decoding, or a native Go slice via
+// reflection-free type switches for the common cases this port's
+// callers produce), or nil otherwise.
+func osxDefaultsAnyList(v any) []any {
 	switch l := v.(type) {
 	case []any:
 		return l
