@@ -168,7 +168,7 @@ func keyringGet(ctx context.Context, conn remoteexec.Connection, service, userna
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool lookup service " + qs + " username " + qu
 	macos := "security find-generic-password -a " + qu + " -s " + qs + " -w"
-	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + " " + keyringDispatch(linux, macos)
+	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
 
 	res, err := conn.Exec(ctx, cmd, nil)
 	if err != nil {
@@ -191,7 +191,7 @@ func keyringSet(ctx context.Context, conn remoteexec.Connection, service, userna
 		"printf %s \"$USER_PASSWORD\" | dbus-run-session -- secret-tool store --label=" + label +
 		" service " + qs + " username " + qu
 	macos := "security add-generic-password -a " + qu + " -s " + qs + " -w " + qp + " -U"
-	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + " USER_PASSWORD=" + shellQuote(userPassword) + " " +
+	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; USER_PASSWORD=" + shellQuote(userPassword) + "; " +
 		keyringDispatch(linux, macos)
 
 	res, err := conn.Exec(ctx, cmd, nil)
@@ -213,7 +213,7 @@ func keyringDelete(ctx context.Context, conn remoteexec.Connection, service, use
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool clear service " + qs + " username " + qu
 	macos := "security delete-generic-password -a " + qu + " -s " + qs
-	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + " " + keyringDispatch(linux, macos)
+	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
 
 	res, err := conn.Exec(ctx, cmd, nil)
 	if err != nil {
