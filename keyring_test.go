@@ -16,7 +16,7 @@ func keyringGetCmdForTest(service, username, keyringPassword string) string {
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool lookup service " + qs + " username " + qu
 	macos := "security find-generic-password -a " + qu + " -s " + qs + " -w"
-	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + " " + keyringDispatch(linux, macos)
+	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
 }
 
 func keyringSetCmdForTest(service, username, keyringPassword, userPassword string) string {
@@ -26,7 +26,7 @@ func keyringSetCmdForTest(service, username, keyringPassword, userPassword strin
 		"printf %s \"$USER_PASSWORD\" | dbus-run-session -- secret-tool store --label=" + label +
 		" service " + qs + " username " + qu
 	macos := "security add-generic-password -a " + qu + " -s " + qs + " -w " + qp + " -U"
-	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + " USER_PASSWORD=" + shellQuote(userPassword) + " " +
+	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; USER_PASSWORD=" + shellQuote(userPassword) + "; " +
 		keyringDispatch(linux, macos)
 }
 
@@ -35,7 +35,7 @@ func keyringDeleteCmdForTest(service, username, keyringPassword string) string {
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool clear service " + qs + " username " + qu
 	macos := "security delete-generic-password -a " + qu + " -s " + qs
-	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + " " + keyringDispatch(linux, macos)
+	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
 }
 
 func TestModuleKeyringSetNew(t *testing.T) {
