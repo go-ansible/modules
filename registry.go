@@ -462,4 +462,56 @@ func registerBuiltins(r *Registry) {
 	r.Register("pmem", modulePmem)
 	r.Register("shutdown", moduleShutdown)
 	r.Register("ejabberd_user", moduleEjabberdUser)
+
+	// community.general collection (batch 6, 35 more of 577 modules): a
+	// sixth, deliberately SMALLER curated slice — by this batch the
+	// remaining pool is dominated by SaaS/cloud/hardware-vendor modules
+	// this port excludes (keycloak/gitlab/jenkins/github/scaleway/hwc/
+	// oneview/utm/redfish/ibm_sa families), so the genuinely portable
+	// remainder no longer supports a full 50-module batch.
+
+	// Provisioning + Django extensions + IPMI.
+	r.Register("cobbler_sync", moduleCobblerSync)
+	r.Register("cobbler_system", moduleCobblerSystem)
+	r.Register("django_check", moduleDjangoCheck)
+	r.Register("django_createcachetable", moduleDjangoCreateCacheTable)
+	r.Register("django_dumpdata", moduleDjangoDumpData)
+	r.Register("django_loaddata", moduleDjangoLoadData)
+	r.Register("ipmi_boot", moduleIPMIBoot)
+	r.Register("ipmi_power", moduleIPMIPower)
+	r.Register("apt_repo", moduleAptRepo)
+	r.Register("apt_rpm", moduleAptRpm)
+	r.Register("snap_connect", moduleSnapConnect)
+	r.Register("solaris_zone", moduleSolarisZone)
+
+	// Niche package managers + process supervision + misc.
+	r.Register("sorcery", moduleSorcery)
+	r.Register("statsd", moduleStatsd)
+	r.Register("svc", moduleSvc)
+	r.Register("swdepot", moduleSwdepot)
+	r.Register("swupd", moduleSwupd)
+	r.Register("syslogger", moduleSyslogger)
+	r.Register("sysupgrade", moduleSysupgrade)
+	r.Register("urpmi", moduleUrpmi)
+	r.Register("write_binary_file", moduleWriteBinaryFile)
+	r.Register("imgadm", moduleImgadm)
+	r.Register("smartos_image_info", moduleSmartosImageInfo)
+	r.Register("nictagadm", moduleNictagadm)
+
+	// Univention UDM.
+	r.Register("udm_dns_record", moduleUdmDnsRecord)
+	r.Register("udm_dns_zone", moduleUdmDnsZone)
+	r.Register("udm_group", moduleUdmGroup)
+	r.Register("udm_share", moduleUdmShare)
+	r.Register("udm_user", moduleUdmUser)
+
+	// XenServer.
+	r.Register("xenserver_facts", moduleXenserverFacts)
+	r.Register("xenserver_guest", moduleXenserverGuest)
+	r.Register("xenserver_guest_info", moduleXenserverGuestInfo)
+	r.Register("xenserver_guest_powerstate", moduleXenserverGuestPowerstate)
+
+	// Misc init systems.
+	r.Register("nosh", moduleNosh)
+	r.Register("simpleinit_msb", moduleSimpleinitMsb)
 }
