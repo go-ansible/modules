@@ -514,4 +514,57 @@ func registerBuiltins(r *Registry) {
 	// Misc init systems.
 	r.Register("nosh", moduleNosh)
 	r.Register("simpleinit_msb", moduleSimpleinitMsb)
+
+	// community.general collection (batch 7, 37 more of 577 modules): a
+	// seventh curated slice. By this batch the exclusion doctrine used
+	// since batch 1 (no SaaS-API wrappers) was deliberately narrowed:
+	// github_*/gitlab_* modules were reconsidered and INCLUDED, since
+	// both platforms ship official CLIs (gh/glab) this port can shell
+	// out to, extending the same CLI-substitution precedent already
+	// used for Consul/Redis/Terraform/Icinga2/Kopia — unlike Slack/
+	// PagerDuty/Jenkins/Scaleway/Keycloak/etc., which have no comparable
+	// universal official CLI and remain excluded.
+
+	// GitHub, via the `gh` CLI.
+	r.Register("github_deploy_key", moduleGithubDeployKey)
+	r.Register("github_issue", moduleGithubIssue)
+	r.Register("github_key", moduleGithubKey)
+	r.Register("github_release", moduleGithubRelease)
+	r.Register("github_repo", moduleGithubRepo)
+	r.Register("github_secrets", moduleGithubSecrets)
+	r.Register("github_secrets_info", moduleGithubSecretsInfo)
+	r.Register("github_webhook", moduleGithubWebhook)
+	r.Register("github_webhook_info", moduleGithubWebhookInfo)
+
+	// GitLab, via the `glab` CLI.
+	r.Register("gitlab_branch", moduleGitlabBranch)
+	r.Register("gitlab_deploy_key", moduleGitlabDeployKey)
+	r.Register("gitlab_group", moduleGitlabGroup)
+	r.Register("gitlab_group_access_token", moduleGitlabGroupAccessToken)
+	r.Register("gitlab_group_members", moduleGitlabGroupMembers)
+	r.Register("gitlab_group_variable", moduleGitlabGroupVariable)
+	r.Register("gitlab_hook", moduleGitlabHook)
+	r.Register("gitlab_instance_variable", moduleGitlabInstanceVariable)
+	r.Register("gitlab_issue", moduleGitlabIssue)
+	r.Register("gitlab_label", moduleGitlabLabel)
+	r.Register("gitlab_merge_request", moduleGitlabMergeRequest)
+	r.Register("gitlab_milestone", moduleGitlabMilestone)
+	r.Register("gitlab_project", moduleGitlabProject)
+	r.Register("gitlab_project_access_token", moduleGitlabProjectAccessToken)
+	r.Register("gitlab_project_approvals", moduleGitlabProjectApprovals)
+	r.Register("gitlab_project_badge", moduleGitlabProjectBadge)
+	r.Register("gitlab_project_members", moduleGitlabProjectMembers)
+	r.Register("gitlab_project_variable", moduleGitlabProjectVariable)
+	r.Register("gitlab_protected_branch", moduleGitlabProtectedBranch)
+	r.Register("gitlab_runner", moduleGitlabRunner)
+	r.Register("gitlab_user", moduleGitlabUser)
+
+	// Misc portable tools.
+	r.Register("keyring", moduleKeyring)
+	r.Register("keyring_info", moduleKeyringInfo)
+	r.Register("odbc", moduleOdbc)
+	r.Register("riak", moduleRiak)
+	r.Register("say", moduleSay)
+	r.Register("serverless", moduleServerless)
+	r.Register("vmadm", moduleVmadm)
 }

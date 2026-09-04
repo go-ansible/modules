@@ -161,7 +161,7 @@ func moduleUdmShare(ctx context.Context, conn remoteexec.Connection, args map[st
 		if err := udmRemove(ctx, conn, modulePath, obj.DN); err != nil {
 			return Result{}, err
 		}
-		return Changed(name + " removed").WithExtra("container", container), nil
+		return Changed(name+" removed").WithExtra("container", container), nil
 	}
 
 	path, err := requireString(args, "path")
@@ -205,16 +205,16 @@ func moduleUdmShare(ctx context.Context, conn remoteexec.Connection, args map[st
 		if err := udmCreate(ctx, conn, modulePath, scope, desired); err != nil {
 			return Result{}, err
 		}
-		return Changed(name + " created").WithExtra("container", container), nil
+		return Changed(name+" created").WithExtra("container", container), nil
 	}
 	changed, err := udmReconcile(ctx, conn, modulePath, obj, desired)
 	if err != nil {
 		return Result{}, err
 	}
 	if !changed {
-		return Ok(name + " already up to date").WithExtra("container", container), nil
+		return Ok(name+" already up to date").WithExtra("container", container), nil
 	}
-	return Changed(name + " updated").WithExtra("container", container), nil
+	return Changed(name+" updated").WithExtra("container", container), nil
 }
 
 // udmShareCustomSettings converts the sambaCustomSettings module

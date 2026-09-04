@@ -37,5 +37,5 @@ func moduleXenserverGuestInfo(ctx context.Context, conn remoteexec.Connection, a
 	if err != nil {
 		return Result{}, err
 	}
-	return Ok("gathered facts for " + uuid).WithExtra("instance", facts), nil
+	return Ok("gathered facts for "+uuid).WithExtra("instance", facts), nil
 }

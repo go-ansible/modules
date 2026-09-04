@@ -18,7 +18,7 @@ func TestModuleUdmDnsZoneRequiresNameserverAndInterfaces(t *testing.T) {
 	findCmd := "udm dns/forward_zone list --filter zone=example.com"
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"ucr get ldap/base": {RC: 0, Stdout: "dc=example,dc=com\n"},
-		findCmd:              {RC: 0, Stdout: ""},
+		findCmd:             {RC: 0, Stdout: ""},
 	})
 	if _, err := moduleUdmDnsZone(context.Background(), conn, map[string]any{
 		"zone": "example.com", "type": "forward_zone",
@@ -34,8 +34,8 @@ func TestModuleUdmDnsZoneCreate(t *testing.T) {
 		" --set nameserver=ns.example.com --set refresh=3600 --set retry=1800 --set ttl=600 --set zone=example.com"
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"ucr get ldap/base": {RC: 0, Stdout: "dc=example,dc=com\n"},
-		findCmd:              {RC: 0, Stdout: ""},
-		createCmd:            {RC: 0},
+		findCmd:             {RC: 0, Stdout: ""},
+		createCmd:           {RC: 0},
 	})
 	res, err := moduleUdmDnsZone(context.Background(), conn, map[string]any{
 		"zone": "example.com", "type": "forward_zone",
@@ -57,7 +57,7 @@ func TestModuleUdmDnsZoneAbsentAlready(t *testing.T) {
 	findCmd := "udm dns/forward_zone list --filter zone=example.com"
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"ucr get ldap/base": {RC: 0, Stdout: "dc=example,dc=com\n"},
-		findCmd:              {RC: 0, Stdout: ""},
+		findCmd:             {RC: 0, Stdout: ""},
 	})
 	res, err := moduleUdmDnsZone(context.Background(), conn, map[string]any{
 		"zone": "example.com", "type": "forward_zone", "state": "absent",

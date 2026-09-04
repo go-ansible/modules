@@ -16,11 +16,11 @@ func TestModuleSimpleinitMsbMissingArgs(t *testing.T) {
 
 func TestModuleSimpleinitMsbTelinitNotFound(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"command -v telinit":         {RC: 1},
-		"test -e /sbin/telinit":      {RC: 1},
-		"test -e /usr/sbin/telinit":  {RC: 1},
-		"test -e /bin/telinit":       {RC: 1},
-		"test -e /usr/bin/telinit":   {RC: 1},
+		"command -v telinit":        {RC: 1},
+		"test -e /sbin/telinit":     {RC: 1},
+		"test -e /usr/sbin/telinit": {RC: 1},
+		"test -e /bin/telinit":      {RC: 1},
+		"test -e /usr/bin/telinit":  {RC: 1},
 	})
 	res, err := moduleSimpleinitMsb(context.Background(), conn, map[string]any{"name": "httpd", "state": "started"})
 	if err != nil {
@@ -33,10 +33,10 @@ func TestModuleSimpleinitMsbTelinitNotFound(t *testing.T) {
 
 func TestModuleSimpleinitMsbAlreadyStarted(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"command -v telinit":                    {RC: 0, Stdout: "/sbin/telinit\n"},
-		"test -e /etc/init.d/smgl_init":          {RC: 0},
-		"/sbin/telinit list":                     {RC: 0, Stdout: "running httpd\n"},
-		"/sbin/telinit run httpd status":         {RC: 0, Stdout: "httpd is running\n"},
+		"command -v telinit":             {RC: 0, Stdout: "/sbin/telinit\n"},
+		"test -e /etc/init.d/smgl_init":  {RC: 0},
+		"/sbin/telinit list":             {RC: 0, Stdout: "running httpd\n"},
+		"/sbin/telinit run httpd status": {RC: 0, Stdout: "httpd is running\n"},
 	})
 	res, err := moduleSimpleinitMsb(context.Background(), conn, map[string]any{"name": "httpd", "state": "started"})
 	if err != nil {
@@ -55,11 +55,11 @@ func TestModuleSimpleinitMsbAlreadyStarted(t *testing.T) {
 
 func TestModuleSimpleinitMsbStartsStoppedService(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"command -v telinit":              {RC: 0, Stdout: "/sbin/telinit\n"},
-		"test -e /etc/init.d/smgl_init":   {RC: 0},
-		"/sbin/telinit list":              {RC: 0, Stdout: "stopped httpd\n"},
-		"/sbin/telinit run httpd status":  {RC: 0, Stdout: "httpd is not running\n"},
-		"/sbin/telinit run httpd start":   {RC: 0},
+		"command -v telinit":             {RC: 0, Stdout: "/sbin/telinit\n"},
+		"test -e /etc/init.d/smgl_init":  {RC: 0},
+		"/sbin/telinit list":             {RC: 0, Stdout: "stopped httpd\n"},
+		"/sbin/telinit run httpd status": {RC: 0, Stdout: "httpd is not running\n"},
+		"/sbin/telinit run httpd start":  {RC: 0},
 	})
 	res, err := moduleSimpleinitMsb(context.Background(), conn, map[string]any{"name": "httpd", "state": "started"})
 	if err != nil {
@@ -90,10 +90,10 @@ func TestModuleSimpleinitMsbUnknownService(t *testing.T) {
 
 func TestModuleSimpleinitMsbEnable(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"command -v telinit":            {RC: 0, Stdout: "/sbin/telinit\n"},
-		"test -e /etc/init.d/smgl_init": {RC: 0},
-		"/sbin/telinit list":            {RC: 0, Stdout: "running httpd\n"},
-		"/sbin/telinit Trued":           {RC: 0, Stdout: ""},
+		"command -v telinit":             {RC: 0, Stdout: "/sbin/telinit\n"},
+		"test -e /etc/init.d/smgl_init":  {RC: 0},
+		"/sbin/telinit list":             {RC: 0, Stdout: "running httpd\n"},
+		"/sbin/telinit Trued":            {RC: 0, Stdout: ""},
 		"/sbin/telinit bootenable httpd": {RC: 0},
 	})
 	res, err := moduleSimpleinitMsb(context.Background(), conn, map[string]any{"name": "httpd", "enabled": true})

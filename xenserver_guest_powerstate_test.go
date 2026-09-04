@@ -17,7 +17,7 @@ func TestModuleXenserverGuestPowerstateMissingArgs(t *testing.T) {
 func TestModuleXenserverGuestPowerstatePresentNoAction(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"xe vm-list name-label=myvm params=uuid --minimal": {RC: 0, Stdout: "vm-uuid-1"},
-		"xe vm-param-list uuid=vm-uuid-1":                   {RC: 0, Stdout: vmParamListStdout()},
+		"xe vm-param-list uuid=vm-uuid-1":                  {RC: 0, Stdout: vmParamListStdout()},
 	})
 	res, err := moduleXenserverGuestPowerstate(context.Background(), conn, map[string]any{"name": "myvm"})
 	if err != nil {
@@ -37,11 +37,11 @@ func TestModuleXenserverGuestPowerstatePowerOn(t *testing.T) {
 	conn := &sequencedFakeConn{
 		fakeConn: newFakeConn(nil),
 		script: []scriptedExec{
-			{result: remoteexec.Result{RC: 0, Stdout: "vm-uuid-1"}},           // vm-list
-			{result: remoteexec.Result{RC: 0, Stdout: "halted"}},              // power-state (before)
-			{result: remoteexec.Result{RC: 0}},                                // vm-start
-			{result: remoteexec.Result{RC: 0, Stdout: "running"}},             // power-state (after)
-			{result: remoteexec.Result{RC: 0, Stdout: vmParamListStdout()}},   // vm-param-list (facts)
+			{result: remoteexec.Result{RC: 0, Stdout: "vm-uuid-1"}},         // vm-list
+			{result: remoteexec.Result{RC: 0, Stdout: "halted"}},            // power-state (before)
+			{result: remoteexec.Result{RC: 0}},                              // vm-start
+			{result: remoteexec.Result{RC: 0, Stdout: "running"}},           // power-state (after)
+			{result: remoteexec.Result{RC: 0, Stdout: vmParamListStdout()}}, // vm-param-list (facts)
 		},
 	}
 	res, err := moduleXenserverGuestPowerstate(context.Background(), conn, map[string]any{

@@ -125,7 +125,7 @@ func moduleXenserverGuest(ctx context.Context, conn remoteexec.Connection, args 
 		if res.RC != 0 {
 			return Fail("xenserver_guest: removing " + name + ": " + strings.TrimSpace(res.Stderr)), nil
 		}
-		return Changed(name + " removed").WithExtra("changes", []string{"destroy"}), nil
+		return Changed(name+" removed").WithExtra("changes", []string{"destroy"}), nil
 	}
 
 	var changes []string

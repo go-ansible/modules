@@ -9,8 +9,8 @@ import (
 
 func TestModuleXenserverFacts(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"xe host-list params=uuid --minimal":  {RC: 0, Stdout: "host-uuid-1"},
-		"xe host-param-list uuid=host-uuid-1":  {RC: 0, Stdout: "    software-version (MRW): product_version: 6.2.0; platform_version: 2.6.0\n"},
+		"xe host-list params=uuid --minimal":    {RC: 0, Stdout: "host-uuid-1"},
+		"xe host-param-list uuid=host-uuid-1":   {RC: 0, Stdout: "    software-version (MRW): product_version: 6.2.0; platform_version: 2.6.0\n"},
 		"xe vlan-list params=uuid --minimal":    {RC: 0, Stdout: ""},
 		"xe pif-list params=uuid --minimal":     {RC: 0, Stdout: ""},
 		"xe network-list params=uuid --minimal": {RC: 0, Stdout: ""},

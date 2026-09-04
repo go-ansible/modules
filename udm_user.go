@@ -150,7 +150,7 @@ func moduleUdmUser(ctx context.Context, conn remoteexec.Connection, args map[str
 		if err := udmRemove(ctx, conn, modulePath, obj.DN); err != nil {
 			return Result{}, err
 		}
-		return Changed(username + " removed").WithExtra("container", container), nil
+		return Changed(username+" removed").WithExtra("container", container), nil
 	}
 
 	firstname, err := requireString(args, "firstname")
@@ -186,13 +186,13 @@ func moduleUdmUser(ctx context.Context, conn remoteexec.Connection, args map[str
 	}
 
 	desired := map[string][]string{
-		"username":    {username},
-		"firstname":   {firstname},
-		"lastname":    {lastname},
-		"displayName": {displayName},
-		"unixhome":    {unixhome},
-		"shell":       {shell},
-		"e-mail":      email,
+		"username":        {username},
+		"firstname":       {firstname},
+		"lastname":        {lastname},
+		"displayName":     {displayName},
+		"unixhome":        {unixhome},
+		"shell":           {shell},
+		"e-mail":          email,
 		"serviceprovider": serviceprovider,
 	}
 	for _, f := range udmUserOptionalStrFields {
@@ -250,9 +250,9 @@ func moduleUdmUser(ctx context.Context, conn remoteexec.Connection, args map[str
 	}
 
 	if !changed {
-		return Ok(username + " already up to date").WithExtra("container", container), nil
+		return Ok(username+" already up to date").WithExtra("container", container), nil
 	}
-	return Changed(username + " updated").WithExtra("container", container), nil
+	return Changed(username+" updated").WithExtra("container", container), nil
 }
 
 // udmUserContainer computes the user's LDAP container, matching real
