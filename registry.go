@@ -861,4 +861,47 @@ func registerBuiltins(r *Registry) {
 	r.Register("memset_zone", moduleMemsetZone)
 	r.Register("memset_zone_domain", moduleMemsetZoneDomain)
 	r.Register("memset_zone_record", moduleMemsetZoneRecord)
+
+	// community.general collection (batch 12, 8 more of 577 modules): a
+	// twelfth curated slice. Airbrake (airbrake-cli), UptimeRobot
+	// (@uptimerobot/cli, a newly-launched official CLI), SendGrid (via
+	// the twilio-cli's built-in email:send, since SendGrid is part of
+	// Twilio), Circonus (circli), and Kea DHCP (kea-shell, ISC's own
+	// tool, though it speaks the Control Agent HTTP API rather than the
+	// real module's Unix Domain Socket — a genuine architecture
+	// difference, not a bug) all extend the already-confirmed
+	// CLI-substitution principle. `infinity` turned out, on reading its
+	// real source, to target FusionLayer's Infinity IPAM — an unrelated
+	// product from Infinidat's storage arrays this batch's own
+	// candidate research named — with no official CLI at all, so it
+	// shells out to `curl` against the same REST endpoints instead,
+	// matching this project's own icinga2_host.go precedent for
+	// REST-only platforms. `spectrum_device`/`spectrum_model_attrs` via
+	// Broadcom's official Spectrum CLI (`vnmsh`) carry a genuine
+	// architecture mismatch of their own: vnmsh is LOCAL-only (SSH to
+	// the SpectroSERVER itself), while the real modules always reach a
+	// REMOTE OneClick REST server — documented prominently in
+	// spectrum_common.go, not silently glossed over.
+
+	// Airbrake, via airbrake-cli.
+	r.Register("airbrake_deployment", moduleAirbrakeDeployment)
+
+	// UptimeRobot, via the official @uptimerobot/cli.
+	r.Register("uptimerobot", moduleUptimerobot)
+
+	// SendGrid, via twilio-cli's built-in email:send.
+	r.Register("sendgrid", moduleSendgrid)
+
+	// FusionLayer Infinity IPAM, via curl (no official CLI exists).
+	r.Register("infinity", moduleInfinity)
+
+	// Circonus, via circli.
+	r.Register("circonus_annotation", moduleCirconusAnnotation)
+
+	// ISC Kea DHCP, via kea-shell.
+	r.Register("kea_command", moduleKeaCommand)
+
+	// Broadcom CA/DX NetOps Spectrum, via vnmsh (local-only).
+	r.Register("spectrum_device", moduleSpectrumDevice)
+	r.Register("spectrum_model_attrs", moduleSpectrumModelAttrs)
 }
