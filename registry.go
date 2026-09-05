@@ -904,4 +904,14 @@ func registerBuiltins(r *Registry) {
 	// Broadcom CA/DX NetOps Spectrum, via vnmsh (local-only).
 	r.Register("spectrum_device", moduleSpectrumDevice)
 	r.Register("spectrum_model_attrs", moduleSpectrumModelAttrs)
+
+	// community.general collection (batch 13, 1 more of 577 modules): a
+	// thirteenth, single-module slice — a final narrow pass over the
+	// remaining pool found IP2Location's own official ip2locationio CLI
+	// genuinely targets the exact same keyless api.ip2location.io API
+	// real ip2location_info.py itself uses (confirmed against the real
+	// module's own doc comment, not assumed from the product name).
+
+	// IP2Location, via ip2locationio.
+	r.Register("ip2location_info", moduleIp2locationInfo)
 }
