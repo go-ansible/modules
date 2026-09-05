@@ -15,7 +15,7 @@ func TestModuleInfinityAddNetwork(t *testing.T) {
 	// HTTPSTATUS marker) — so build the exact expected command and
 	// script a matching response.
 	body := `{"network_address":"192.168.310.0","network_family":"4","network_location":-1,"network_name":"n1","network_size":"/26","network_type":"lan"}`
-	cmd := "curl -s -k -K - -w '\nHTTPSTATUS:%{http_code}' -X POST -H 'Content-Type: application/json' -d " +
+	cmd := "curl -s -k -K - --max-time 20 -w '\nHTTPSTATUS:%{http_code}' -X POST -H 'Content-Type: application/json' -d " +
 		shellQuote(body) + " " + shellQuote("https://80.75.107.12/rest/v1/networks")
 	conn.on = map[string]remoteexec.Result{
 		"command -v curl": {RC: 0},
@@ -71,7 +71,7 @@ func TestModuleInfinityMissingActionArgIsOkNotFailed(t *testing.T) {
 
 func TestModuleInfinityHTTPErrorIsOkNotFailed(t *testing.T) {
 	conn := newFakeConn(nil)
-	cmd := "curl -s -k -K - -w '\nHTTPSTATUS:%{http_code}' -X POST -H 'Content-Type: application/json' " +
+	cmd := "curl -s -k -K - --max-time 20 -w '\nHTTPSTATUS:%{http_code}' -X POST -H 'Content-Type: application/json' " +
 		shellQuote("https://1.2.3.4/rest/v1/networks/10/reserve_ip")
 	conn.on = map[string]remoteexec.Result{
 		"command -v curl": {RC: 0},

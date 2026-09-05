@@ -255,7 +255,10 @@ func infinityCall(ctx context.Context, conn remoteexec.Connection, args map[stri
 // (`https://<server_ip>/rest/v1/<resource>`), always with `-k`
 // (matching real infinity.py's own hardcoded validate_certs=False) and
 // HTTP Basic auth supplied ONLY via curl's own `-K -` stdin config —
-// see moduleInfinity's own doc comment.
+// see moduleInfinity's own doc comment. `--max-time 20` matches real
+// infinity.py's own hardcoded `open_url(..., timeout=20)` — without it,
+// curl has no bound at all and can hang indefinitely against an
+// unreachable server, unlike the real module's own bounded request.
 func infinityCurl(ctx context.Context, conn remoteexec.Connection, args map[string]any, method, resource, jsonBody string) (respBody string, status int, err error) {
 	serverIP := argString(args, "server_ip", "")
 	username := argString(args, "username", "")
@@ -263,7 +266,7 @@ func infinityCurl(ctx context.Context, conn remoteexec.Connection, args map[stri
 	url := "https://" + serverIP + "/rest/v1/" + resource
 
 	var b strings.Builder
-	b.WriteString("curl -s -k -K - -w " + shellQuote("\nHTTPSTATUS:%{http_code}"))
+	b.WriteString("curl -s -k -K - --max-time 20 -w " + shellQuote("\nHTTPSTATUS:%{http_code}"))
 	b.WriteString(" -X " + shellQuote(method))
 	b.WriteString(" -H " + shellQuote("Content-Type: application/json"))
 	if jsonBody != "" {
