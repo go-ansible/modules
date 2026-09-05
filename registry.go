@@ -745,4 +745,85 @@ func registerBuiltins(r *Registry) {
 
 	// DNS, via ipwcli (already CLI-driven in the real module).
 	r.Register("ipwcli_dns", moduleIpwcliDns)
+
+	// community.general collection (batch 10, 29 more of 577 modules): a
+	// tenth curated slice. Two modules (bower, easy_install) are trivial,
+	// doctrine-free ports — the real modules already shell out to those
+	// exact local CLIs directly, same as npm/yarn/pnpm/pip. file_remove
+	// is a pure local-filesystem operation, no CLI question at all. The
+	// remainder extends the already-confirmed CLI-substitution principle
+	// to a further sweep of newly-verified official CLIs (Heroku,
+	// Mattermost, New Relic, DNSimple, ipinfo.io, Cloudflare, OVHcloud,
+	// Dell EMC VNX, IBM Spectrum Accelerate, HPE 3PAR), plus a genuine
+	// third doctrine-widening decision, explicitly confirmed with the
+	// user: the Redfish hardware-vendor family (idrac_redfish_*,
+	// ilo_redfish_*, xcc_redfish_command), previously named as an
+	// exclusion example since batch 5 — reconsidered because HPE's
+	// `ilorest` and Lenovo's `OneCli` are genuine, strong-fit official
+	// Redfish CLIs, and Dell's `racadm` is a real official (if older,
+	// parallel) interface covering overlapping ground; Western Digital
+	// was investigated and found to have no official CLI, so
+	// wdc_redfish_* and the vendor-neutral redfish_command/config/info
+	// remain excluded. hponcfg is not a substitution at all — the real
+	// module already shells out to that exact HP-published local binary.
+
+	// Trivial, doctrine-free (real modules already shell out locally).
+	r.Register("bower", moduleBower)
+	r.Register("easy_install", moduleEasyInstall)
+	r.Register("file_remove", moduleFileRemove)
+
+	// Heroku, via the heroku CLI.
+	r.Register("heroku_collaborator", moduleHerokuCollaborator)
+
+	// Mattermost, via mmctl.
+	r.Register("mattermost", moduleMattermost)
+
+	// New Relic, via the newrelic CLI.
+	r.Register("newrelic_deployment", moduleNewrelicDeployment)
+
+	// DNSimple, via dnsimple-cli.
+	r.Register("dnsimple", moduleDnsimple)
+	r.Register("dnsimple_info", moduleDnsimpleInfo)
+
+	// ipinfo.io, via the ipinfo CLI.
+	r.Register("ipinfoio_facts", moduleIpinfoioFacts)
+
+	// Cloudflare, via flarectl.
+	r.Register("cloudflare_dns", moduleCloudflareDns)
+
+	// OVHcloud, via ovhcloud-cli.
+	r.Register("ovh_ip_failover", moduleOvhIPFailover)
+	r.Register("ovh_ip_loadbalancing_backend", moduleOvhIPLoadbalancingBackend)
+	r.Register("ovh_monthly_billing", moduleOvhMonthlyBilling)
+
+	// Dell EMC VNX, via naviseccli.
+	r.Register("emc_vnx_sg_member", moduleEmcVnxSgMember)
+
+	// IBM Spectrum Accelerate / XIV, via xcli.
+	r.Register("ibm_sa_domain", moduleIbmSaDomain)
+	r.Register("ibm_sa_host", moduleIbmSaHost)
+	r.Register("ibm_sa_host_ports", moduleIbmSaHostPorts)
+	r.Register("ibm_sa_pool", moduleIbmSaPool)
+	r.Register("ibm_sa_vol", moduleIbmSaVol)
+	r.Register("ibm_sa_vol_map", moduleIbmSaVolMap)
+
+	// HPE 3PAR, via its own CLI over SSH.
+	r.Register("ss_3par_cpg", moduleSs3parCpg)
+
+	// HP iLO/RILOE, via hponcfg (not a substitution, the real module
+	// already shells out to this exact binary).
+	r.Register("hponcfg", moduleHponcfg)
+
+	// Dell iDRAC Redfish, via racadm.
+	r.Register("idrac_redfish_command", moduleIdracRedfishCommand)
+	r.Register("idrac_redfish_config", moduleIdracRedfishConfig)
+	r.Register("idrac_redfish_info", moduleIdracRedfishInfo)
+
+	// HPE iLO Redfish, via ilorest.
+	r.Register("ilo_redfish_command", moduleIloRedfishCommand)
+	r.Register("ilo_redfish_config", moduleIloRedfishConfig)
+	r.Register("ilo_redfish_info", moduleIloRedfishInfo)
+
+	// Lenovo XCC Redfish, via OneCli.
+	r.Register("xcc_redfish_command", moduleXccRedfishCommand)
 }
