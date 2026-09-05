@@ -826,4 +826,39 @@ func registerBuiltins(r *Registry) {
 
 	// Lenovo XCC Redfish, via OneCli.
 	r.Register("xcc_redfish_command", moduleXccRedfishCommand)
+
+	// community.general collection (batch 11, 10 more of 577 modules): an
+	// eleventh curated slice. ansible_galaxy_install is not a
+	// substitution at all — the real module already shells out to
+	// ansible-galaxy directly. The rest extends the already-confirmed
+	// CLI-substitution principle to Atlassian's new acli (Jira Cloud
+	// only — partial-fidelity, several jira.py operations have no acli
+	// equivalent and fail loud), Honeybadger's hb, Rollbar's
+	// rollbar-cli, and Memset's ma-shell (a generic API-passthrough
+	// tool, same pattern as hwc_common.go's KooCLI). rollbar-cli and
+	// ma-shell were both confirmed, by reading their real source, to
+	// have NO environment-variable alternative to their access-token/
+	// API-key argv flag — a documented, unavoidable deviation from this
+	// project's own no-secrets-in-argv rule, not an oversight.
+
+	// Not a substitution — the real module already shells out to
+	// ansible-galaxy directly.
+	r.Register("ansible_galaxy_install", moduleAnsibleGalaxyInstall)
+
+	// Atlassian Jira, via acli (Jira Cloud only).
+	r.Register("jira", moduleJira)
+
+	// Honeybadger, via hb.
+	r.Register("honeybadger_deployment", moduleHoneybadgerDeployment)
+
+	// Rollbar, via rollbar-cli.
+	r.Register("rollbar_deployment", moduleRollbarDeployment)
+
+	// Memset, via ma-shell (generic API passthrough).
+	r.Register("memset_dns_reload", moduleMemsetDNSReload)
+	r.Register("memset_memstore_info", moduleMemsetMemstoreInfo)
+	r.Register("memset_server_info", moduleMemsetServerInfo)
+	r.Register("memset_zone", moduleMemsetZone)
+	r.Register("memset_zone_domain", moduleMemsetZoneDomain)
+	r.Register("memset_zone_record", moduleMemsetZoneRecord)
 }
