@@ -58,13 +58,21 @@ import (
 //     redfish_command.py's own CATEGORY_COMMANDS_ALL, not assumed to
 //     mirror Systems); ClearLogs via `redfishtool Managers Logs list`
 //     then `clearLog <id>` per entry — see redfishManagerCommand's own
-//     doc comment for the wait/wait_timeout gap.
+//     doc comment for the wait/wait_timeout gap; ResetToDefaults via a
+//     discover-then-POST against redfishtool's generic `raw` subcommand
+//     (no dedicated redfishtool operation exists) — see
+//     redfishActionsHolder's own doc comment for the pattern.
+//   - Update: SimpleUpdate, via the same discover-then-POST `raw`
+//     pattern (redfishtool has no UpdateService subcommand at all) —
+//     see redfishUpdateCommand's own doc comment.
 //
-// Update, VirtualMediaInsert/Eject, ResetToDefaults, and
-// VerifyBiosAttributes are declared with empty command lists (or absent
-// entirely from Manager's own list, for the latter three) below — real
-// categories/commands, none wired yet — a later increment of this same
-// batch, not assumed to work.
+// VirtualMediaInsert/Eject (need vendor-specific empty-slot matching
+// real Ansible itself special-cases per vendor — not safely
+// approximated without real hardware to verify against) and
+// MultipartHTTPPushUpdate/PerformRequestedOperations (need real
+// multipart upload / a discovered update_handle workflow, neither
+// investigated) stay unwired — real, disclosed gaps, a later increment
+// of this same batch.
 //
 // Args: category (required); command (required list); baseuri
 // (required, real effect); username/password (real effect, staged via
@@ -169,6 +177,18 @@ func moduleRedfishCommand(ctx context.Context, conn remoteexec.Connection, args 
 			if res.Changed {
 				changed = true
 			}
+
+		case category == "Update":
+			res, err := redfishUpdateCommand(ctx, conn, baseuri, username, password, command, args)
+			if err != nil {
+				return Result{}, err
+			}
+			if res.Failed {
+				return res, nil
+			}
+			if res.Changed {
+				changed = true
+			}
 		}
 	}
 
@@ -195,8 +215,9 @@ var redfishCommandCategories = map[string][]string{
 	"Manager": {
 		"PowerOn", "PowerForceOff", "PowerForceRestart", "PowerGracefulRestart",
 		"PowerGracefulShutdown", "PowerReboot", "GracefulRestart", "ClearLogs",
+		"ResetToDefaults",
 	},
-	"Update": {},
+	"Update": {"SimpleUpdate"},
 }
 
 var redfishResetTypeByCommand = map[string]string{
@@ -564,6 +585,132 @@ func redfishManagerCommand(ctx context.Context, conn remoteexec.Connection, base
 			}
 		}
 		return Changed(""), nil
+
+	case command == "ResetToDefaults":
+		mode := argString(args, "reset_to_defaults_mode", "")
+		if mode == "" {
+			return Fail("redfish_command: ResetToDefaults: must provide reset_to_defaults_mode"), nil
+		}
+		var mgr redfishActionsHolder
+		r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &mgr, "Managers")
+		if err != nil {
+			return Result{}, err
+		}
+		if r.RC != 0 {
+			return Fail("redfish_command: ResetToDefaults: " + redfishtoolErrMsg(r)), nil
+		}
+		action, ok := mgr.Actions["#Manager.ResetToDefaults"]
+		if !ok || action.Target == "" {
+			return Fail("redfish_command: ResetToDefaults: Action #Manager.ResetToDefaults not found"), nil
+		}
+		body, err := json.Marshal(map[string]any{"ResetType": mode})
+		if err != nil {
+			return Result{}, err
+		}
+		pr, err := redfishtoolRun(ctx, conn, baseuri, username, password, "-d", string(body), "raw", "POST", action.Target)
+		if err != nil {
+			return Result{}, err
+		}
+		if pr.RC != 0 {
+			return Fail("redfish_command: ResetToDefaults: " + redfishtoolErrMsg(pr)), nil
+		}
+		return Changed(""), nil
 	}
 	return Fail("redfish_command: Manager: unsupported command " + command), nil
+}
+
+// redfishActionsHolder decodes just enough of a Redfish resource's own
+// Actions map to discover an action's POST target URI — shared by
+// ResetToDefaults and SimpleUpdate, both a "GET the resource, read its
+// own Actions[key].target, POST there" pattern real Ansible itself
+// follows (confirmed from reset_to_defaults's and simple_update's own
+// source), reproduced here via redfishtool's generic `raw` subcommand
+// since neither action has a dedicated named redfishtool operation.
+type redfishActionsHolder struct {
+	Actions map[string]struct {
+		Target string `json:"target"`
+	} `json:"Actions"`
+}
+
+// redfishUpdateCommand implements real redfish_command.py's Update
+// category's SimpleUpdate command. redfishtool has no dedicated
+// UpdateService subcommand (confirmed absent from its own subcommand
+// list) — this port discovers the Update Service via `redfishtool root`
+// (the ServiceRoot resource, which links to it) then `redfishtool raw
+// GET <uri>` to read its own Actions, matching the two real, disclosed
+// steps real Ansible's own simple_update performs via direct HTTP
+// instead.
+//
+// MultipartHTTPPushUpdate (needs actual multipart file upload) and
+// PerformRequestedOperations (needs a discovered update_handle) are not
+// wired — real, disclosed gaps, a later increment of this same batch.
+func redfishUpdateCommand(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, command string, args map[string]any) (Result, error) {
+	if command != "SimpleUpdate" {
+		return Fail("redfish_command: Update: unsupported command " + command), nil
+	}
+
+	imageURI := argString(args, "update_image_uri", "")
+	if imageURI == "" {
+		return Fail("redfish_command: SimpleUpdate: must provide update_image_uri"), nil
+	}
+
+	var root struct {
+		UpdateService struct {
+			ODataID string `json:"@odata.id"`
+		} `json:"UpdateService"`
+	}
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &root, "root")
+	if err != nil {
+		return Result{}, err
+	}
+	if r.RC != 0 {
+		return Fail("redfish_command: SimpleUpdate: " + redfishtoolErrMsg(r)), nil
+	}
+	if root.UpdateService.ODataID == "" {
+		return Fail("redfish_command: SimpleUpdate: service does not support SimpleUpdate"), nil
+	}
+
+	var svc redfishActionsHolder
+	r2, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &svc, "raw", "GET", root.UpdateService.ODataID)
+	if err != nil {
+		return Result{}, err
+	}
+	if r2.RC != 0 {
+		return Fail("redfish_command: SimpleUpdate: " + redfishtoolErrMsg(r2)), nil
+	}
+	action, ok := svc.Actions["#UpdateService.SimpleUpdate"]
+	if !ok || action.Target == "" {
+		return Fail("redfish_command: SimpleUpdate: service does not support SimpleUpdate"), nil
+	}
+
+	payload := map[string]any{"ImageURI": imageURI}
+	if protocol := argString(args, "update_protocol", ""); protocol != "" {
+		payload["TransferProtocol"] = protocol
+	}
+	if targets := argStringList(args, "update_targets"); len(targets) > 0 {
+		payload["Targets"] = targets
+	}
+	if creds, ok := args["update_creds"].(map[string]any); ok {
+		if u := argString(creds, "username", ""); u != "" {
+			payload["Username"] = u
+		}
+		if p := argString(creds, "password", ""); p != "" {
+			payload["Password"] = p
+		}
+	}
+	if applyTime := argString(args, "update_apply_time", ""); applyTime != "" {
+		payload["@Redfish.OperationApplyTime"] = applyTime
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return Result{}, err
+	}
+	pr, err := redfishtoolRun(ctx, conn, baseuri, username, password, "-d", string(body), "raw", "POST", action.Target)
+	if err != nil {
+		return Result{}, err
+	}
+	if pr.RC != 0 {
+		return Fail("redfish_command: SimpleUpdate: " + redfishtoolErrMsg(pr)), nil
+	}
+	return Changed("SimpleUpdate requested"), nil
 }
