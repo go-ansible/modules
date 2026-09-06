@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -58,17 +59,44 @@ import (
 // current one) — this port always reports Changed, a real, disclosed,
 // narrower gap.
 //
-// DeleteVolumes/CreateVolume (storage/RAID configuration, genuinely
-// complex vendor-varying logic) and the whole Manager/Sessions
-// categories (SetNetworkProtocols/SetManagerNic/SetHostInterface/
-// SetServiceIdentification/SetSessionService) are declared with empty
-// command lists — real categories, not wired yet, a later increment of
-// this same batch.
+// A second increment added the rest of Manager and all of Sessions:
+//
+//   - SetNetworkProtocols: discover the Manager's own NetworkProtocol
+//     sub-resource (GET bare `Managers`, read `NetworkProtocol.@odata.id`
+//     — no named redfishtool subcommand for it), then `raw PATCH` with a
+//     payload built the same way real set_network_protocols itself
+//     normalizes it: ProtocolEnabled coerced from any of
+//     true/"true"/"True"/"on"/1 (and the false equivalents) to a real
+//     bool, Port coerced to an int, everything else passed through.
+//   - SetHostInterface: discover the Manager's HostInterfaces
+//     collection, list its members, and select one — by
+//     hostinterface_id (matching the URI's own last path segment, same
+//     as real Ansible) if given, or the sole member if there is
+//     exactly one, else fails loud (real Ansible's own "ID not defined
+//     and multiple interfaces detected" case) — then `raw PATCH` the
+//     selected member with hostinterface_config verbatim.
+//   - SetServiceIdentification / SetSessionService: PATCH via the
+//     already-named `Managers`/`SessionService` subcommand's own
+//     `patch` operation directly — simplest of this whole batch, no
+//     discovery needed since ServiceIdentification and SessionService
+//     config live on the resource itself.
+//
+// SetManagerNic is NOT wired: real set_manager_nic identifies the
+// target NIC by string-searching the ENTIRE JSON of each
+// EthernetInterface member for the given nic_addr substring (or
+// derives one from the connection's own hostname when omitted) — a
+// real, genuinely fuzzy-matching quirk this port did not attempt to
+// reproduce faithfully without a way to verify it. DeleteVolumes/
+// CreateVolume (storage/RAID configuration, genuinely complex
+// vendor-varying logic) also stay unwired. All three are absent from
+// their category's own command list below — real, disclosed gaps, a
+// later increment of this same batch.
 //
 // Args: category (required); command (required list); baseuri
 // (required, real effect); username/password (real effect); auth_token
 // (not supported, fails loud); bios_attributes; boot_order;
-// secure_boot_enable; power_restore_policy.
+// secure_boot_enable; power_restore_policy; network_protocols;
+// hostinterface_config; hostinterface_id; service_id; sessions_config.
 func moduleRedfishConfig(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	category, err := requireString(args, "category")
 	if err != nil {
@@ -95,7 +123,16 @@ func moduleRedfishConfig(ctx context.Context, conn remoteexec.Connection, args m
 	lastChanged := false
 	lastMsg := ""
 	for _, command := range commands {
-		res, err := redfishConfigSystemsCommand(ctx, conn, baseuri, username, password, command, args)
+		var res Result
+		var err error
+		switch category {
+		case "Systems":
+			res, err = redfishConfigSystemsCommand(ctx, conn, baseuri, username, password, command, args)
+		case "Manager":
+			res, err = redfishConfigManagerCommand(ctx, conn, baseuri, username, password, command, args)
+		case "Sessions":
+			res, err = redfishConfigSessionsCommand(ctx, conn, baseuri, username, password, command, args)
+		}
 		if err != nil {
 			return Result{}, err
 		}
@@ -118,8 +155,10 @@ var redfishConfigCategories = map[string][]string{
 		"SetDefaultBootOrder", "EnableSecureBoot", "SetSecureBoot",
 		"SetPowerRestorePolicy",
 	},
-	"Manager":  {},
-	"Sessions": {},
+	"Manager": {
+		"SetNetworkProtocols", "SetHostInterface", "SetServiceIdentification",
+	},
+	"Sessions": {"SetSessionService"},
 }
 
 func redfishConfigSystemsCommand(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, command string, args map[string]any) (Result, error) {
@@ -146,16 +185,20 @@ func redfishConfigSystemsCommand(ctx context.Context, conn remoteexec.Connection
 // same `redfishtool Systems` idiom redfish_command.go's own reset/
 // setBootOverride commands already use) and returns the @odata.id of
 // one of its own linked sub-resources (e.g. "Bios" or "SecureBoot").
-func redfishSystemsSubResourceURI(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, key string) (string, Result, error) {
-	var sys map[string]json.RawMessage
-	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &sys, "Systems")
+// redfishResourceSubURI GETs a bare top-level resource (via redfishtool's
+// own named subcommand — "Systems" or "Managers", both already used
+// elsewhere in this batch) and returns the @odata.id of one of its own
+// linked sub-resources (e.g. "Bios", "SecureBoot", "NetworkProtocol").
+func redfishResourceSubURI(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, topCommand, key string) (string, Result, error) {
+	var res map[string]json.RawMessage
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &res, topCommand)
 	if err != nil {
 		return "", Result{}, err
 	}
 	if r.RC != 0 {
 		return "", Fail("redfish_config: " + redfishtoolErrMsg(r)), nil
 	}
-	raw, ok := sys[key]
+	raw, ok := res[key]
 	if !ok {
 		return "", Fail("redfish_config: " + key + " resource not found"), nil
 	}
@@ -172,7 +215,7 @@ func redfishSystemsSubResourceURI(ctx context.Context, conn remoteexec.Connectio
 }
 
 func redfishSetBiosDefaultSettings(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string) (Result, error) {
-	biosURI, res, err := redfishSystemsSubResourceURI(ctx, conn, baseuri, username, password, "Bios")
+	biosURI, res, err := redfishResourceSubURI(ctx, conn, baseuri, username, password, "Systems", "Bios")
 	if err != nil {
 		return Result{}, err
 	}
@@ -206,7 +249,7 @@ func redfishSetBiosAttributes(ctx context.Context, conn remoteexec.Connection, b
 	if len(attrs) == 0 {
 		return Fail("redfish_config: SetBiosAttributes: must provide bios_attributes"), nil
 	}
-	biosURI, res, err := redfishSystemsSubResourceURI(ctx, conn, baseuri, username, password, "Bios")
+	biosURI, res, err := redfishResourceSubURI(ctx, conn, baseuri, username, password, "Systems", "Bios")
 	if err != nil {
 		return Result{}, err
 	}
@@ -305,7 +348,7 @@ func redfishSetDefaultBootOrder(ctx context.Context, conn remoteexec.Connection,
 }
 
 func redfishSetSecureBoot(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, enable bool) (Result, error) {
-	secureBootURI, res, err := redfishSystemsSubResourceURI(ctx, conn, baseuri, username, password, "SecureBoot")
+	secureBootURI, res, err := redfishResourceSubURI(ctx, conn, baseuri, username, password, "Systems", "SecureBoot")
 	if err != nil {
 		return Result{}, err
 	}
@@ -343,4 +386,223 @@ func redfishSetPowerRestorePolicy(ctx context.Context, conn remoteexec.Connectio
 		return Fail("redfish_config: SetPowerRestorePolicy: " + redfishtoolErrMsg(r)), nil
 	}
 	return Changed("Modified PowerRestorePolicy"), nil
+}
+
+func redfishConfigManagerCommand(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, command string, args map[string]any) (Result, error) {
+	switch command {
+	case "SetNetworkProtocols":
+		return redfishSetNetworkProtocols(ctx, conn, baseuri, username, password, args)
+	case "SetHostInterface":
+		return redfishSetHostInterface(ctx, conn, baseuri, username, password, args)
+	case "SetServiceIdentification":
+		return redfishSetServiceIdentification(ctx, conn, baseuri, username, password, args)
+	}
+	return Fail("redfish_config: Manager: unsupported command " + command), nil
+}
+
+func redfishConfigSessionsCommand(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, command string, args map[string]any) (Result, error) {
+	if command != "SetSessionService" {
+		return Fail("redfish_config: Sessions: unsupported command " + command), nil
+	}
+	sessionsConfig, _ := args["sessions_config"].(map[string]any)
+	if len(sessionsConfig) == 0 {
+		return Fail("redfish_config: SetSessionService: must provide sessions_config"), nil
+	}
+	body, err := json.Marshal(sessionsConfig)
+	if err != nil {
+		return Result{}, err
+	}
+	r, err := redfishtoolRun(ctx, conn, baseuri, username, password, "SessionService", "patch", string(body))
+	if err != nil {
+		return Result{}, err
+	}
+	if r.RC != 0 {
+		return Fail("redfish_config: SetSessionService: " + redfishtoolErrMsg(r)), nil
+	}
+	return Changed("Modified session service"), nil
+}
+
+func redfishSetServiceIdentification(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, args map[string]any) (Result, error) {
+	serviceID := argString(args, "service_id", "")
+	if serviceID == "" {
+		return Fail("redfish_config: SetServiceIdentification: must provide service_id"), nil
+	}
+	body, err := json.Marshal(map[string]any{"ServiceIdentification": serviceID})
+	if err != nil {
+		return Result{}, err
+	}
+	r, err := redfishtoolRun(ctx, conn, baseuri, username, password, "Managers", "patch", string(body))
+	if err != nil {
+		return Result{}, err
+	}
+	if r.RC != 0 {
+		return Fail("redfish_config: SetServiceIdentification: " + redfishtoolErrMsg(r)), nil
+	}
+	return Changed(""), nil
+}
+
+// redfishProtocolBool coerces one of real set_network_protocols' own
+// accepted ProtocolEnabled spellings (true/"true"/"True"/"on"/1 and
+// their false equivalents) to a real bool — confirmed from its own
+// protocol_state_onlist/protocol_state_offlist source, not guessed.
+func redfishProtocolBool(value any) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case string:
+		switch v {
+		case "true", "True", "on":
+			return true, true
+		case "false", "False", "off":
+			return false, true
+		}
+	case int:
+		if v == 1 {
+			return true, true
+		}
+		if v == 0 {
+			return false, true
+		}
+	case float64:
+		if v == 1 {
+			return true, true
+		}
+		if v == 0 {
+			return false, true
+		}
+	}
+	return false, false
+}
+
+var redfishNetworkProtocolServices = map[string]bool{
+	"SNMP": true, "VirtualMedia": true, "Telnet": true, "SSDP": true, "IPMI": true,
+	"SSH": true, "KVMIP": true, "NTP": true, "HTTP": true, "HTTPS": true,
+	"DHCP": true, "DHCPv6": true, "RDP": true, "RFB": true,
+}
+
+func redfishNormalizeNetworkProtocols(services map[string]any) (map[string]any, Result) {
+	payload := map[string]any{}
+	for serviceName, rawProps := range services {
+		if !redfishNetworkProtocolServices[serviceName] {
+			return nil, Fail("redfish_config: SetNetworkProtocols: service name " + serviceName + " is invalid")
+		}
+		props, _ := rawProps.(map[string]any)
+		out := map[string]any{}
+		for propName, value := range props {
+			switch propName {
+			case "ProtocolEnabled", "protocolenabled":
+				b, ok := redfishProtocolBool(value)
+				if !ok {
+					return nil, Fail("redfish_config: SetNetworkProtocols: value of property " + propName + " is invalid")
+				}
+				out["ProtocolEnabled"] = b
+			case "port", "Port":
+				switch v := value.(type) {
+				case int:
+					out["Port"] = v
+				case float64:
+					out["Port"] = int(v)
+				default:
+					return nil, Fail("redfish_config: SetNetworkProtocols: value of property " + propName + " is invalid")
+				}
+			default:
+				out[propName] = value
+			}
+		}
+		payload[serviceName] = out
+	}
+	return payload, Result{}
+}
+
+func redfishSetNetworkProtocols(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, args map[string]any) (Result, error) {
+	services, _ := args["network_protocols"].(map[string]any)
+	if len(services) == 0 {
+		return Fail("redfish_config: SetNetworkProtocols: must provide network_protocols"), nil
+	}
+	payload, res := redfishNormalizeNetworkProtocols(services)
+	if res.Failed {
+		return res, nil
+	}
+
+	networkProtocolURI, res, err := redfishResourceSubURI(ctx, conn, baseuri, username, password, "Managers", "NetworkProtocol")
+	if err != nil {
+		return Result{}, err
+	}
+	if res.Failed {
+		return res, nil
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return Result{}, err
+	}
+	r, err := redfishtoolRun(ctx, conn, baseuri, username, password, "-d", string(body), "raw", "PATCH", networkProtocolURI)
+	if err != nil {
+		return Result{}, err
+	}
+	if r.RC != 0 {
+		return Fail("redfish_config: SetNetworkProtocols: " + redfishtoolErrMsg(r)), nil
+	}
+	return Changed("Modified manager network protocol settings"), nil
+}
+
+func redfishSetHostInterface(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, args map[string]any) (Result, error) {
+	hostinterfaceConfig, _ := args["hostinterface_config"].(map[string]any)
+	if len(hostinterfaceConfig) == 0 {
+		return Fail("redfish_config: SetHostInterface: must provide hostinterface_config"), nil
+	}
+
+	hostInterfacesURI, res, err := redfishResourceSubURI(ctx, conn, baseuri, username, password, "Managers", "HostInterfaces")
+	if err != nil {
+		return Result{}, err
+	}
+	if res.Failed {
+		return res, nil
+	}
+
+	var coll struct {
+		Members []struct {
+			ODataID string `json:"@odata.id"`
+		} `json:"Members"`
+	}
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &coll, "raw", "GET", hostInterfacesURI)
+	if err != nil {
+		return Result{}, err
+	}
+	if r.RC != 0 {
+		return Fail("redfish_config: SetHostInterface: " + redfishtoolErrMsg(r)), nil
+	}
+
+	hostinterfaceID := argString(args, "hostinterface_id", "")
+	var target string
+	if hostinterfaceID != "" {
+		for _, m := range coll.Members {
+			trimmed := strings.TrimSuffix(m.ODataID, "/")
+			last := trimmed[strings.LastIndex(trimmed, "/")+1:]
+			if strings.Contains(last, hostinterfaceID) {
+				target = m.ODataID
+				break
+			}
+		}
+		if target == "" {
+			return Fail("redfish_config: SetHostInterface: HostInterface ID " + hostinterfaceID + " not present"), nil
+		}
+	} else if len(coll.Members) == 1 {
+		target = coll.Members[0].ODataID
+	} else {
+		return Fail("redfish_config: SetHostInterface: hostinterface_id not defined and multiple interfaces detected"), nil
+	}
+
+	body, err := json.Marshal(hostinterfaceConfig)
+	if err != nil {
+		return Result{}, err
+	}
+	pr, err := redfishtoolRun(ctx, conn, baseuri, username, password, "-d", string(body), "raw", "PATCH", target)
+	if err != nil {
+		return Result{}, err
+	}
+	if pr.RC != 0 {
+		return Fail("redfish_config: SetHostInterface: " + redfishtoolErrMsg(pr)), nil
+	}
+	return Changed("Modified host interface"), nil
 }
