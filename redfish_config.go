@@ -191,7 +191,13 @@ func redfishConfigSystemsCommand(ctx context.Context, conn remoteexec.Connection
 // linked sub-resources (e.g. "Bios", "SecureBoot", "NetworkProtocol").
 func redfishResourceSubURI(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, topCommand, key string) (string, Result, error) {
 	var res map[string]json.RawMessage
-	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &res, topCommand)
+	// "-1" (--One) is required: a bare topCommand with no operation
+	// argument and no ID-selecting option defaults to "collection" in
+	// redfishtool's own SystemsMain/ManagersMain (the len(args)<2
+	// branch), not "get" — confirmed from their own source. Without it
+	// this would decode a {Members:[...]} collection into the
+	// single-resource shape this function expects.
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &res, "-1", topCommand)
 	if err != nil {
 		return "", Result{}, err
 	}
@@ -326,7 +332,10 @@ func redfishSetBootOrder(ctx context.Context, conn remoteexec.Connection, baseur
 
 func redfishSetDefaultBootOrder(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string) (Result, error) {
 	var sys redfishActionsHolder
-	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &sys, "Systems")
+	// "-1" (--One): see redfishResourceSubURI's own doc comment — a bare
+	// "Systems" call with no ID-selecting option defaults to
+	// redfishtool's own "collection" operation, not "get".
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &sys, "-1", "Systems")
 	if err != nil {
 		return Result{}, err
 	}
