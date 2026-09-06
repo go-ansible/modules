@@ -49,11 +49,22 @@ import (
 //     setpassword|patch` — see redfishAccountCommand's own doc comment
 //     for real idempotency handling and two disclosed gaps
 //     (UpdateUserName, UpdateUserAccountTypes).
+//   - Manager: PowerOn/PowerForceOff/PowerForceRestart/
+//     PowerGracefulRestart/PowerGracefulShutdown/PowerReboot/
+//     GracefulRestart (a legacy alias real Ansible maps onto
+//     PowerGracefulRestart) via `redfishtool Managers reset <resetType>`
+//     — real Manager Power* deliberately excludes PowerCycle/
+//     PowerFullPowerCycle, unlike Systems (confirmed from real
+//     redfish_command.py's own CATEGORY_COMMANDS_ALL, not assumed to
+//     mirror Systems); ClearLogs via `redfishtool Managers Logs list`
+//     then `clearLog <id>` per entry — see redfishManagerCommand's own
+//     doc comment for the wait/wait_timeout gap.
 //
-// Manager, Update, VirtualMediaInsert/Eject, and VerifyBiosAttributes
-// are declared with empty command lists below — real categories, no
-// commands wired yet — a later increment of this same batch, not
-// assumed to work.
+// Update, VirtualMediaInsert/Eject, ResetToDefaults, and
+// VerifyBiosAttributes are declared with empty command lists (or absent
+// entirely from Manager's own list, for the latter three) below — real
+// categories/commands, none wired yet — a later increment of this same
+// batch, not assumed to work.
 //
 // Args: category (required); command (required list); baseuri
 // (required, real effect); username/password (real effect, staged via
@@ -146,6 +157,18 @@ func moduleRedfishCommand(ctx context.Context, conn remoteexec.Connection, args 
 			if res.Changed {
 				changed = true
 			}
+
+		case category == "Manager":
+			res, err := redfishManagerCommand(ctx, conn, baseuri, username, password, command, args)
+			if err != nil {
+				return Result{}, err
+			}
+			if res.Failed {
+				return res, nil
+			}
+			if res.Changed {
+				changed = true
+			}
 		}
 	}
 
@@ -169,8 +192,11 @@ var redfishCommandCategories = map[string][]string{
 		"UpdateUserRole", "UpdateUserPassword", "UpdateAccountServiceProperties",
 	},
 	"Sessions": {"ClearSessions", "CreateSession", "DeleteSession"},
-	"Manager":  {},
-	"Update":   {},
+	"Manager": {
+		"PowerOn", "PowerForceOff", "PowerForceRestart", "PowerGracefulRestart",
+		"PowerGracefulShutdown", "PowerReboot", "GracefulRestart", "ClearLogs",
+	},
+	"Update": {},
 }
 
 var redfishResetTypeByCommand = map[string]string{
@@ -468,4 +494,76 @@ func redfishAccountCommand(ctx context.Context, conn remoteexec.Connection, base
 		return Changed("Modified account service"), nil
 	}
 	return Fail("redfish_command: Accounts: unsupported command " + command), nil
+}
+
+// redfishManagerCommand implements real redfish_command.py's Manager
+// category's Power*/GracefulRestart and ClearLogs commands via
+// redfishtool's `Managers` subcommand — confirmed from Managers.py's
+// own source (its `reset` operation shares the exact same resetType
+// enum Systems.py's own `reset` does; its `Logs`/`clearLog <id>`
+// operations, not a single bulk clear).
+//
+// # Real semantics matched
+//
+// `GracefulRestart` is a legacy alias real redfish_command.py itself
+// rewrites to `PowerGracefulRestart` before dispatch — this port does
+// the same rewrite. ClearLogs lists every LogServices member
+// (`Managers Logs list`) and clears each individually (`Managers
+// clearLog <id>`), matching real clear_logs()'s own loop-over-all-
+// members behavior exactly, including reporting Changed unconditionally
+// (real clear_logs never sets changed=false, even when no logs exist —
+// confirmed from its own source, not assumed).
+//
+// # One real, disclosed gap
+//
+// real manage_manager_power accepts `wait`/`wait_timeout` to poll the
+// manager until it comes back up before returning; redfishtool's own
+// `reset` operation has no such option, so a task requesting `wait:
+// true` fails loud rather than silently returning before the manager
+// has actually finished restarting.
+func redfishManagerCommand(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, command string, args map[string]any) (Result, error) {
+	if argBool(args, "wait", false) {
+		return Fail("redfish_command: Manager: wait/wait_timeout is not supported by this port's redfishtool substitution — see redfish_command.go's own doc comment"), nil
+	}
+
+	switch {
+	case command == "GracefulRestart" || strings.HasPrefix(command, "Power"):
+		resetType := "GracefulRestart"
+		if command != "GracefulRestart" {
+			resetType = redfishResetTypeByCommand[command]
+		}
+		r, err := redfishtoolRun(ctx, conn, baseuri, username, password, "Managers", "reset", resetType)
+		if err != nil {
+			return Result{}, err
+		}
+		if r.RC != 0 {
+			return Fail("redfish_command: " + command + ": " + redfishtoolErrMsg(r)), nil
+		}
+		return Changed(""), nil
+
+	case command == "ClearLogs":
+		var coll struct {
+			Members []struct {
+				ID string `json:"Id"`
+			} `json:"Members"`
+		}
+		r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &coll, "Managers", "Logs", "list")
+		if err != nil {
+			return Result{}, err
+		}
+		if r.RC != 0 {
+			return Fail("redfish_command: ClearLogs: " + redfishtoolErrMsg(r)), nil
+		}
+		for _, m := range coll.Members {
+			lr, err := redfishtoolRun(ctx, conn, baseuri, username, password, "Managers", "clearLog", m.ID)
+			if err != nil {
+				return Result{}, err
+			}
+			if lr.RC != 0 {
+				return Fail("redfish_command: ClearLogs: " + redfishtoolErrMsg(lr)), nil
+			}
+		}
+		return Changed(""), nil
+	}
+	return Fail("redfish_command: Manager: unsupported command " + command), nil
 }
