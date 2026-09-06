@@ -836,6 +836,15 @@ func registerBuiltins(r *Registry) {
 	r.Register("hpilo_boot", moduleHpiloBoot)
 	r.Register("hpilo_info", moduleHpiloInfo)
 
+	// Vendor-neutral Redfish, via DMTF's own redfishtool — a real,
+	// networked substitution (unlike the vendor CLIs above, which run
+	// local/in-band with no real credential effect); see
+	// redfishtool_common.go's own doc comment. Multi-session batch:
+	// this covers Systems/Chassis power, boot override, and indicator
+	// LED only so far — see redfish_command.go's own doc comment for
+	// exactly what's covered and what isn't yet.
+	r.Register("redfish_command", moduleRedfishCommand)
+
 	// community.general collection (batch 11, 10 more of 577 modules): an
 	// eleventh curated slice. ansible_galaxy_install is not a
 	// substitution at all — the real module already shells out to
