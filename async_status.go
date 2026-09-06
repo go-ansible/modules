@@ -9,24 +9,17 @@ import (
 // moduleAsyncStatus implements Ansible's `async_status` module: checks
 // on a previously started asynchronous task by its job ID.
 //
-// Real ansible.builtin.async_status only works together with the
-// `async`/`poll` task-level mechanism: a task launched with `async:` is
-// backgrounded on the target with its own results file under
-// `~/.ansible_async/`, and async_status polls that file for `jid`. This
-// port implements no such mechanism at all — `async`/`poll` is an
-// engine-level feature (how a task is launched and subsequently
-// awaited), out of scope for a single module, and go-ansible's engine
-// never backgrounds a task that way. Rather than silently returning a
-// fabricated "finished" result (which would misrepresent an
-// unimplemented feature as a working one), async_status always fails
-// with a clear, on-topic message — this package's convention of
-// failing loud instead of being silently wrong.
+// A task launched with `async:` (only command/shell — see
+// playbook.Engine's own async handling and AsyncLaunch's doc comment
+// for why this port can't genuinely background arbitrary modules the
+// way real Ansible does) is backgrounded on the target via AsyncLaunch,
+// under ~/.ansible_async/<jid>. This module polls that same job
+// through AsyncCheck/AsyncCleanup — real, working status/cleanup now,
+// not the permanent hard-fail this module used to be before
+// go-ansible/playbook implemented the launching side of async: at all.
 //
 // Args: jid (string, required); mode (status|cleanup, default
-// "status") — accepted and validated so a real playbook's async_status
-// task gets a specific failure naming the actual gap, rather than a
-// generic argument error; both modes fail identically here, since
-// neither has anything to check or clean up.
+// "status").
 func moduleAsyncStatus(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	jid, err := requireString(args, "jid")
 	if err != nil {
@@ -36,6 +29,34 @@ func moduleAsyncStatus(ctx context.Context, conn remoteexec.Connection, args map
 	if mode != "status" && mode != "cleanup" {
 		return Result{}, errArg("async_status: mode must be status or cleanup, got %q", mode)
 	}
-	return Fail("async_status: async task execution is not implemented in this port; " +
-		"there is no backgrounded job " + jid + " to check or clean up"), nil
+
+	if mode == "cleanup" {
+		if err := AsyncCleanup(ctx, conn, jid); err != nil {
+			return Result{}, err
+		}
+		return Ok("job cleaned up").
+			WithExtra("ansible_job_id", jid).
+			WithExtra("erased", jid), nil
+	}
+
+	found, done, rc, stdout, stderr, err := AsyncCheck(ctx, conn, jid)
+	if err != nil {
+		return Result{}, err
+	}
+	if !found {
+		return Fail("could not find job").
+			WithExtra("ansible_job_id", jid).
+			WithExtra("started", true).
+			WithExtra("finished", true), nil
+	}
+	r := Ok("").
+		WithExtra("ansible_job_id", jid).
+		WithExtra("started", true).
+		WithExtra("finished", done)
+	if !done {
+		return r, nil
+	}
+	r.Failed = rc != 0
+	r = r.WithExtra("rc", rc).WithExtra("stdout", stdout).WithExtra("stderr", stderr)
+	return r, nil
 }

@@ -21,19 +21,12 @@ func moduleCommand(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Result{}, err
 	}
 
-	if skip, msg, err := skipByCreatesRemoves(ctx, conn, args); err != nil {
+	cmdLine, skip, skipMsg, err := ComposeCommandLine(ctx, conn, "command", args)
+	if err != nil {
 		return Result{}, err
-	} else if skip {
-		return Ok(msg), nil
 	}
-
-	quoted := make([]string, len(argv))
-	for i, a := range argv {
-		quoted[i] = shellQuote(a)
-	}
-	cmdLine := strings.Join(quoted, " ")
-	if chdir := argString(args, "chdir", ""); chdir != "" {
-		cmdLine = "cd " + shellQuote(chdir) + " && " + cmdLine
+	if skip {
+		return Ok(skipMsg), nil
 	}
 
 	res, err := conn.Exec(ctx, cmdLine, nil)
@@ -41,6 +34,61 @@ func moduleCommand(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Result{}, err
 	}
 	return commandResult(argv, res), nil
+}
+
+// ComposeCommandLine composes the exact shell command line the
+// "command" or "shell" module would execute for args (argv-quoting/
+// chdir handling included), running the real creates/removes
+// short-circuit check against conn but WITHOUT executing the command
+// itself — skip=true means the command should not run at all (skipMsg
+// explains why, matching what a synchronous run would return via
+// Ok(msg) instead of actually running anything).
+//
+// Exported for go-ansible/playbook's async: task launcher: command and
+// shell are the only two modules whose entire job reduces to one
+// remote command, and so the only two this port can genuinely
+// background on the target the way async requires — the launcher needs
+// the exact command a synchronous run would use, to wrap it instead of
+// running it directly.
+func ComposeCommandLine(ctx context.Context, conn remoteexec.Connection, module string, args map[string]any) (cmdLine string, skip bool, skipMsg string, err error) {
+	switch module {
+	case "command":
+		argv, err := commandArgv(args)
+		if err != nil {
+			return "", false, "", err
+		}
+		if skip, msg, err := skipByCreatesRemoves(ctx, conn, args); err != nil {
+			return "", false, "", err
+		} else if skip {
+			return "", true, msg, nil
+		}
+		quoted := make([]string, len(argv))
+		for i, a := range argv {
+			quoted[i] = shellQuote(a)
+		}
+		cmdLine := strings.Join(quoted, " ")
+		if chdir := argString(args, "chdir", ""); chdir != "" {
+			cmdLine = "cd " + shellQuote(chdir) + " && " + cmdLine
+		}
+		return cmdLine, false, "", nil
+	case "shell":
+		cmdStr := argString(args, "cmd", argString(args, "_raw_params", ""))
+		if strings.TrimSpace(cmdStr) == "" {
+			return "", false, "", errArg("shell: missing required argument: cmd")
+		}
+		if skip, msg, err := skipByCreatesRemoves(ctx, conn, args); err != nil {
+			return "", false, "", err
+		} else if skip {
+			return "", true, msg, nil
+		}
+		full := cmdStr
+		if chdir := argString(args, "chdir", ""); chdir != "" {
+			full = "cd " + shellQuote(chdir) + " && " + cmdStr
+		}
+		return full, false, "", nil
+	default:
+		return "", false, "", fmt.Errorf("ComposeCommandLine: unsupported module %q (only command/shell)", module)
+	}
 }
 
 // moduleShell implements Ansible's `shell` module: runs cmd through the
@@ -54,15 +102,12 @@ func moduleShell(ctx context.Context, conn remoteexec.Connection, args map[strin
 		return Result{}, errArg("shell: missing required argument: cmd")
 	}
 
-	if skip, msg, err := skipByCreatesRemoves(ctx, conn, args); err != nil {
+	full, skip, skipMsg, err := ComposeCommandLine(ctx, conn, "shell", args)
+	if err != nil {
 		return Result{}, err
-	} else if skip {
-		return Ok(msg), nil
 	}
-
-	full := cmdStr
-	if chdir := argString(args, "chdir", ""); chdir != "" {
-		full = "cd " + shellQuote(chdir) + " && " + cmdStr
+	if skip {
+		return Ok(skipMsg), nil
 	}
 
 	res, err := conn.Exec(ctx, full, nil)
