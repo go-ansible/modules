@@ -114,7 +114,7 @@ func TestRegistryDefault(t *testing.T) {
 		"pkgin", "pkgng", "pkgutil", "pmem", "pnpm", "portage", "portinstall",
 		"pritunl_org", "pritunl_org_info", "pritunl_user", "pritunl_user_info",
 		"pulp_repo", "puppet", "python_requirements_info", "raw", "read_csv",
-		"reboot", "redhat_subscription", "redis", "redis_data",
+		"reboot", "redfish_command", "redhat_subscription", "redis", "redis_data",
 		"redis_data_incr", "redis_data_info", "redis_info", "replace",
 		"rhel_facts", "rhel_rpm_ostree", "rhsm_release", "rhsm_repository",
 		"riak", "rollbar_deployment", "rpm_key", "rpm_ostree_pkg",
