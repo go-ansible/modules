@@ -843,6 +843,7 @@ func registerBuiltins(r *Registry) {
 	// see each module's own doc comment for exactly what's covered.
 	r.Register("redfish_command", moduleRedfishCommand)
 	r.Register("redfish_config", moduleRedfishConfig)
+	r.Register("redfish_info", moduleRedfishInfo)
 
 	// community.general collection (batch 11, 10 more of 577 modules): an
 	// eleventh curated slice. ansible_galaxy_install is not a
