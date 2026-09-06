@@ -59,7 +59,7 @@ func TestModuleRedfishConfigSetPowerRestorePolicy(t *testing.T) {
 
 func TestModuleRedfishConfigSetDefaultBootOrder(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Systems; rm -f /tmp/redfishtool-cfg.json`
+	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[getCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{"#ComputerSystem.SetDefaultBootOrder":{"target":"/redfish/v1/Systems/1/Actions/ComputerSystem.SetDefaultBootOrder"}}}`}
 	res, err := moduleRedfishConfig(context.Background(), conn, redfishArgs(map[string]any{
 		"category": "Systems", "command": []any{"SetDefaultBootOrder"},
@@ -77,7 +77,7 @@ func TestModuleRedfishConfigSetDefaultBootOrder(t *testing.T) {
 
 func TestModuleRedfishConfigSetBiosDefaultSettings(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Systems; rm -f /tmp/redfishtool-cfg.json`
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"Bios":{"@odata.id":"/redfish/v1/Systems/1/Bios/"}}`}
 	biosCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Bios/; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[biosCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{"#Bios.ResetBios":{"target":"/redfish/v1/Systems/1/Bios/Actions/Bios.ResetBios"}}}`}
@@ -97,7 +97,7 @@ func TestModuleRedfishConfigSetBiosDefaultSettings(t *testing.T) {
 
 func TestModuleRedfishConfigEnableSecureBoot(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Systems; rm -f /tmp/redfishtool-cfg.json`
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"SecureBoot":{"@odata.id":"/redfish/v1/Systems/1/SecureBoot/"}}`}
 	res, err := moduleRedfishConfig(context.Background(), conn, redfishArgs(map[string]any{
 		"category": "Systems", "command": []any{"EnableSecureBoot"},
@@ -116,7 +116,7 @@ func TestModuleRedfishConfigEnableSecureBoot(t *testing.T) {
 
 func TestModuleRedfishConfigSetSecureBootFalse(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Systems; rm -f /tmp/redfishtool-cfg.json`
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"SecureBoot":{"@odata.id":"/redfish/v1/Systems/1/SecureBoot/"}}`}
 	res, err := moduleRedfishConfig(context.Background(), conn, redfishArgs(map[string]any{
 		"category": "Systems", "command": []any{"SetSecureBoot"}, "secure_boot_enable": false,
@@ -134,7 +134,7 @@ func TestModuleRedfishConfigSetSecureBootFalse(t *testing.T) {
 
 func TestModuleRedfishConfigSetBiosAttributes(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Systems; rm -f /tmp/redfishtool-cfg.json`
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"Bios":{"@odata.id":"/redfish/v1/Systems/1/Bios/"}}`}
 	biosCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Bios/; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[biosCmd] = remoteexec.Result{RC: 0, Stdout: `{"Attributes":{"BootMode":"Uefi","NumLock":"On"},"@Redfish.Settings":{"SettingsObject":{"@odata.id":"/redfish/v1/Systems/1/Bios/Settings/"}}}`}
@@ -162,7 +162,7 @@ func TestModuleRedfishConfigSetBiosAttributes(t *testing.T) {
 
 func TestModuleRedfishConfigSetBiosAttributesAlreadySetIsIdempotent(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Systems; rm -f /tmp/redfishtool-cfg.json`
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"Bios":{"@odata.id":"/redfish/v1/Systems/1/Bios/"}}`}
 	biosCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Bios/; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[biosCmd] = remoteexec.Result{RC: 0, Stdout: `{"Attributes":{"BootMode":"Uefi"},"@Redfish.Settings":{"SettingsObject":{"@odata.id":"/redfish/v1/Systems/1/Bios/Settings/"}}}`}
@@ -279,7 +279,7 @@ func TestModuleRedfishConfigSetSessionServiceMissingFailsLoud(t *testing.T) {
 
 func TestModuleRedfishConfigSetNetworkProtocols(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[getCmd] = remoteexec.Result{RC: 0, Stdout: `{"NetworkProtocol":{"@odata.id":"/redfish/v1/Managers/1/NetworkProtocol/"}}`}
 	res, err := moduleRedfishConfig(context.Background(), conn, redfishArgs(map[string]any{
 		"category": "Manager", "command": []any{"SetNetworkProtocols"},
@@ -314,7 +314,7 @@ func TestModuleRedfishConfigSetNetworkProtocolsInvalidServiceFailsLoud(t *testin
 
 func TestModuleRedfishConfigSetHostInterfaceSoleMember(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"HostInterfaces":{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/"}}`}
 	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/HostInterfaces/; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/1/"}]}`}
@@ -335,7 +335,7 @@ func TestModuleRedfishConfigSetHostInterfaceSoleMember(t *testing.T) {
 
 func TestModuleRedfishConfigSetHostInterfaceByID(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"HostInterfaces":{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/"}}`}
 	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/HostInterfaces/; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/1/"},{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/2/"}]}`}
@@ -356,7 +356,7 @@ func TestModuleRedfishConfigSetHostInterfaceByID(t *testing.T) {
 
 func TestModuleRedfishConfigSetHostInterfaceAmbiguousFailsLoud(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"HostInterfaces":{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/"}}`}
 	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/HostInterfaces/; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/1/"},{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/2/"}]}`}

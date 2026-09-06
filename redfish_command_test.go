@@ -639,7 +639,7 @@ func TestModuleRedfishCommandManagerVirtualMediaNotYetWiredFailsLoud(t *testing.
 
 func TestModuleRedfishCommandManagerResetToDefaults(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[getCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{"#Manager.ResetToDefaults":{"target":"/redfish/v1/Managers/1/Actions/Manager.ResetToDefaults"}}}`}
 	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
 		"category": "Manager", "command": []any{"ResetToDefaults"}, "reset_to_defaults_mode": "ResetAll",
@@ -672,7 +672,7 @@ func TestModuleRedfishCommandManagerResetToDefaultsMissingModeFailsLoud(t *testi
 
 func TestModuleRedfishCommandManagerResetToDefaultsActionMissingFailsLoud(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
-	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[getCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{}}`}
 	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
 		"category": "Manager", "command": []any{"ResetToDefaults"}, "reset_to_defaults_mode": "ResetAll",

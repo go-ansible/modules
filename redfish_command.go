@@ -592,7 +592,12 @@ func redfishManagerCommand(ctx context.Context, conn remoteexec.Connection, base
 			return Fail("redfish_command: ResetToDefaults: must provide reset_to_defaults_mode"), nil
 		}
 		var mgr redfishActionsHolder
-		r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &mgr, "Managers")
+		// "-1" (--One): a bare "Managers" call with no operation and no
+		// ID-selecting option defaults to redfishtool's own "collection"
+		// operation, not "get" — confirmed from ManagersMain's own
+		// source. Without it this decodes a {Members:[...]} collection
+		// into redfishActionsHolder's single-resource Actions shape.
+		r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &mgr, "-1", "Managers")
 		if err != nil {
 			return Result{}, err
 		}
