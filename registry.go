@@ -839,11 +839,10 @@ func registerBuiltins(r *Registry) {
 	// Vendor-neutral Redfish, via DMTF's own redfishtool — a real,
 	// networked substitution (unlike the vendor CLIs above, which run
 	// local/in-band with no real credential effect); see
-	// redfishtool_common.go's own doc comment. Multi-session batch:
-	// this covers Systems/Chassis power, boot override, and indicator
-	// LED only so far — see redfish_command.go's own doc comment for
-	// exactly what's covered and what isn't yet.
+	// redfishtool_common.go's own doc comment. Multi-session batch —
+	// see each module's own doc comment for exactly what's covered.
 	r.Register("redfish_command", moduleRedfishCommand)
+	r.Register("redfish_config", moduleRedfishConfig)
 
 	// community.general collection (batch 11, 10 more of 577 modules): an
 	// eleventh curated slice. ansible_galaxy_install is not a
