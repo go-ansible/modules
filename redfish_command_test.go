@@ -182,13 +182,13 @@ func TestModuleRedfishCommandInvalidCategoryFails(t *testing.T) {
 func TestModuleRedfishCommandNotYetWiredCategoryFailsLoud(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
-		"category": "Update", "command": []any{"SimpleUpdate"},
+		"category": "Update", "command": []any{"MultipartHTTPPushUpdate"},
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.Failed {
-		t.Fatalf("res = %+v, want Failed (Update not wired yet this batch)", res)
+		t.Fatalf("res = %+v, want Failed (MultipartHTTPPushUpdate not wired yet this batch)", res)
 	}
 }
 
@@ -634,5 +634,137 @@ func TestModuleRedfishCommandManagerVirtualMediaNotYetWiredFailsLoud(t *testing.
 	}
 	if !res.Failed {
 		t.Fatalf("res = %+v, want Failed (VirtualMediaInsert not wired yet)", res)
+	}
+}
+
+func TestModuleRedfishCommandManagerResetToDefaults(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[getCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{"#Manager.ResetToDefaults":{"target":"/redfish/v1/Managers/1/Actions/Manager.ResetToDefaults"}}}`}
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"ResetToDefaults"}, "reset_to_defaults_mode": "ResetAll",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || !res.Changed {
+		t.Fatalf("res = %+v", res)
+	}
+	last := lastCommand(conn)
+	if !strings.Contains(last, "raw POST /redfish/v1/Managers/1/Actions/Manager.ResetToDefaults") ||
+		!strings.Contains(last, `-d '{"ResetType":"ResetAll"}'`) {
+		t.Fatalf("command = %q", last)
+	}
+}
+
+func TestModuleRedfishCommandManagerResetToDefaultsMissingModeFailsLoud(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"ResetToDefaults"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed", res)
+	}
+}
+
+func TestModuleRedfishCommandManagerResetToDefaultsActionMissingFailsLoud(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	getCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[getCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{}}`}
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"ResetToDefaults"}, "reset_to_defaults_mode": "ResetAll",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (no ResetToDefaults action on this service)", res)
+	}
+}
+
+func TestModuleRedfishCommandSimpleUpdate(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{"UpdateService":{"@odata.id":"/redfish/v1/UpdateService/"}}`}
+	getSvcCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[getSvcCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{"#UpdateService.SimpleUpdate":{"target":"/redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate"}}}`}
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Update", "command": []any{"SimpleUpdate"}, "update_image_uri": "http://example.com/fw.bin",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || !res.Changed {
+		t.Fatalf("res = %+v", res)
+	}
+	last := lastCommand(conn)
+	if !strings.Contains(last, "raw POST /redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate") ||
+		!strings.Contains(last, `"ImageURI":"http://example.com/fw.bin"`) {
+		t.Fatalf("command = %q", last)
+	}
+}
+
+func TestModuleRedfishCommandSimpleUpdateMissingImageURIFailsLoud(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Update", "command": []any{"SimpleUpdate"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed", res)
+	}
+}
+
+func TestModuleRedfishCommandSimpleUpdateNoServiceFailsLoud(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{}`}
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Update", "command": []any{"SimpleUpdate"}, "update_image_uri": "http://example.com/fw.bin",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (no UpdateService link)", res)
+	}
+}
+
+func TestModuleRedfishCommandSimpleUpdateWithAllOptions(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{"UpdateService":{"@odata.id":"/redfish/v1/UpdateService/"}}`}
+	getSvcCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[getSvcCmd] = remoteexec.Result{RC: 0, Stdout: `{"Actions":{"#UpdateService.SimpleUpdate":{"target":"/redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate"}}}`}
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Update", "command": []any{"SimpleUpdate"},
+		"update_image_uri":  "http://example.com/fw.bin",
+		"update_protocol":   "HTTP",
+		"update_targets":    []any{"/redfish/v1/Systems/1"},
+		"update_creds":      map[string]any{"username": "fwuser", "password": "fwpass"},
+		"update_apply_time": "Immediate",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || !res.Changed {
+		t.Fatalf("res = %+v", res)
+	}
+	last := lastCommand(conn)
+	for _, want := range []string{
+		`"TransferProtocol":"HTTP"`,
+		`"Targets":["/redfish/v1/Systems/1"]`,
+		`"Username":"fwuser"`,
+		`"Password":"fwpass"`,
+		`"@Redfish.OperationApplyTime":"Immediate"`,
+	} {
+		if !strings.Contains(last, want) {
+			t.Fatalf("command missing %q: %q", want, last)
+		}
 	}
 }
