@@ -182,13 +182,13 @@ func TestModuleRedfishCommandInvalidCategoryFails(t *testing.T) {
 func TestModuleRedfishCommandNotYetWiredCategoryFailsLoud(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
-		"category": "Manager", "command": []any{"GracefulRestart"},
+		"category": "Update", "command": []any{"SimpleUpdate"},
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.Failed {
-		t.Fatalf("res = %+v, want Failed (Manager not wired yet this batch)", res)
+		t.Fatalf("res = %+v, want Failed (Update not wired yet this batch)", res)
 	}
 }
 
@@ -529,5 +529,110 @@ func TestModuleRedfishCommandUpdateAccountServicePropertiesMissingFailsLoud(t *t
 	}
 	if !res.Failed {
 		t.Fatalf("res = %+v, want Failed", res)
+	}
+}
+
+func TestModuleRedfishCommandManagerPowerOn(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"PowerOn"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || !res.Changed {
+		t.Fatalf("res = %+v", res)
+	}
+	if !strings.Contains(lastCommand(conn), "Managers reset On") {
+		t.Fatalf("command = %q", lastCommand(conn))
+	}
+}
+
+func TestModuleRedfishCommandManagerGracefulRestartAlias(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"GracefulRestart"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || !res.Changed {
+		t.Fatalf("res = %+v", res)
+	}
+	if !strings.Contains(lastCommand(conn), "Managers reset GracefulRestart") {
+		t.Fatalf("command = %q", lastCommand(conn))
+	}
+}
+
+func TestModuleRedfishCommandManagerPowerCycleNotAccepted(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"PowerCycle"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (Manager has no PowerCycle in real Ansible)", res)
+	}
+}
+
+func TestModuleRedfishCommandManagerWaitFailsLoud(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"PowerGracefulRestart"}, "wait": true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (wait not supported)", res)
+	}
+}
+
+func TestModuleRedfishCommandManagerClearLogs(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers Logs list; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"Id":"Log1"},{"Id":"Log2"}]}`}
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"ClearLogs"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || !res.Changed {
+		t.Fatalf("res = %+v", res)
+	}
+	joined := strings.Join(conn.Commands, "\n")
+	if !strings.Contains(joined, "Managers clearLog Log1") || !strings.Contains(joined, "Managers clearLog Log2") {
+		t.Fatalf("commands = %q", conn.Commands)
+	}
+}
+
+func TestModuleRedfishCommandManagerClearLogsEmptyStillChanged(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers Logs list; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[]}`}
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"ClearLogs"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || !res.Changed {
+		t.Fatalf("res = %+v, want ok and Changed (real clear_logs never reports unchanged)", res)
+	}
+}
+
+func TestModuleRedfishCommandManagerVirtualMediaNotYetWiredFailsLoud(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	res, err := moduleRedfishCommand(context.Background(), conn, redfishArgs(map[string]any{
+		"category": "Manager", "command": []any{"VirtualMediaInsert"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (VirtualMediaInsert not wired yet)", res)
 	}
 }
