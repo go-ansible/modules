@@ -3,6 +3,7 @@ package modules
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	remoteexec "github.com/go-remoteexec/transport"
@@ -63,6 +64,23 @@ func redfishtoolRun(ctx context.Context, conn remoteexec.Connection, baseuri, us
 		" && redfishtool -c " + shellQuote(tmp) + " -r " + shellQuote(baseuri) + " " + strings.Join(quoted, " ") +
 		"; rm -f " + shellQuote(tmp)
 	return runStatus(ctx, conn, cmd)
+}
+
+// redfishtoolRunJSON runs redfishtoolRun and, on success, JSON-decodes
+// its stdout into out — redfishtool's own default output mode (no -v/-s
+// flags) prints the operation's response data as JSON, confirmed from
+// its own source for every operation this port calls it for.
+func redfishtoolRunJSON(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, out any, args ...string) (remoteexec.Result, error) {
+	res, err := redfishtoolRun(ctx, conn, baseuri, username, password, args...)
+	if err != nil {
+		return res, err
+	}
+	if res.RC == 0 && out != nil && strings.TrimSpace(res.Stdout) != "" {
+		if jerr := json.Unmarshal([]byte(res.Stdout), out); jerr != nil {
+			return res, fmt.Errorf("decoding redfishtool output: %w", jerr)
+		}
+	}
+	return res, nil
 }
 
 func redfishtoolErrMsg(res remoteexec.Result) string {
