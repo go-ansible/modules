@@ -827,6 +827,15 @@ func registerBuiltins(r *Registry) {
 	// Lenovo XCC Redfish, via OneCli.
 	r.Register("xcc_redfish_command", moduleXccRedfishCommand)
 
+	// HPE iLO RIBCL boot/info, via the same local/in-band ilorest this
+	// batch's ilo_redfish_* family already uses — RIBCL is older than
+	// Redfish, but the same physical iLO covers the same real hardware
+	// behavior (one-time boot device, power control, basic hardware
+	// info) via Redfish instead, confirmed against HPE's own
+	// python-redfish-utility source before writing hpilo_common.go.
+	r.Register("hpilo_boot", moduleHpiloBoot)
+	r.Register("hpilo_info", moduleHpiloInfo)
+
 	// community.general collection (batch 11, 10 more of 577 modules): an
 	// eleventh curated slice. ansible_galaxy_install is not a
 	// substitution at all — the real module already shells out to
