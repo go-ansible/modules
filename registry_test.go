@@ -188,6 +188,54 @@ func TestRegistryRunKnownModule(t *testing.T) {
 	}
 }
 
+func TestRegistryRunFQCNModule(t *testing.T) {
+	r := Default()
+	cases := []string{
+		"ansible.builtin.debug",
+		"ansible.legacy.debug",
+	}
+	for _, name := range cases {
+		res, err := r.Run(context.Background(), name, local(), map[string]any{"msg": "hi"})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if res.Msg != "hi" {
+			t.Fatalf("%s: Msg = %q", name, res.Msg)
+		}
+	}
+}
+
+func TestRegistryRunFQCNCommunityGeneral(t *testing.T) {
+	r := Default()
+	// ufw is a community.general module in this port's registry; the
+	// bare name must still resolve too (real Ansible's own implicit
+	// search path finds ansible.builtin/legacy first, but a bare name
+	// for a non-builtin module still resolves when only one collection
+	// provides it, which is always true in this flat registry).
+	if _, ok := r.Get("ufw"); !ok {
+		t.Fatal("bare \"ufw\" not registered — test assumption wrong")
+	}
+	if _, ok := r.Get("community.general.ufw"); !ok {
+		t.Fatal("FQCN \"community.general.ufw\" did not resolve")
+	}
+}
+
+func TestNormalizeName(t *testing.T) {
+	cases := map[string]string{
+		"ansible.builtin.copy":    "copy",
+		"ansible.legacy.copy":     "copy",
+		"ansible.posix.firewalld": "firewalld",
+		"community.general.ufw":   "ufw",
+		"copy":                    "copy",
+		"some.other.thing":        "some.other.thing", // unknown prefix, unchanged
+	}
+	for in, want := range cases {
+		if got := NormalizeName(in); got != want {
+			t.Errorf("NormalizeName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestRegistryOverride(t *testing.T) {
 	r := NewRegistry()
 	r.Register("x", func(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {

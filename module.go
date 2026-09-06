@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	remoteexec "github.com/go-remoteexec/transport"
@@ -84,12 +85,55 @@ func (r *Registry) Register(name string, fn Func) {
 	r.modules[name] = fn
 }
 
-// Get looks up a module by name.
+// Get looks up a module by name. A fully-qualified collection name
+// (FQCN) — "ansible.builtin.copy", "community.general.ufw" — resolves
+// to the same entry as the bare name ("copy", "ufw") once the known
+// collection prefix is stripped; see NormalizeName. This is a
+// deliberate simplification, not full collection-scoped resolution:
+// this registry is a single flat namespace (matching how this port's
+// module set has no real cross-collection name collisions to
+// disambiguate), so an FQCN with the WRONG collection prefix for a
+// given module (e.g. "ansible.builtin.ufw", when ufw is actually
+// community.general's) still resolves — real Ansible would instead
+// fail "couldn't resolve module" in that case. In practice this only
+// diverges from real Ansible on a playbook that already has an
+// incorrect FQCN, which would already be broken there too.
 func (r *Registry) Get(name string) (Func, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	fn, ok := r.modules[name]
-	return fn, ok
+	if fn, ok := r.modules[name]; ok {
+		return fn, ok
+	}
+	if short := NormalizeName(name); short != name {
+		fn, ok := r.modules[short]
+		return fn, ok
+	}
+	return nil, false
+}
+
+// knownCollectionPrefixes are the collections this port's module
+// registry draws from, plus "ansible.legacy." — real Ansible's own
+// alias for ansible.builtin, commonly seen in generated/exported
+// playbooks. Deliberately NOT a wildcard match on "any two dotted
+// segments before the last one": limiting to known collections avoids
+// mistaking an unrelated dotted string for an FQCN.
+var knownCollectionPrefixes = []string{
+	"ansible.legacy.",
+	"ansible.builtin.",
+	"ansible.posix.",
+	"community.general.",
+}
+
+// NormalizeName strips a known collection prefix from an FQCN module
+// or playbook-directive reference, returning name unchanged if it
+// carries none of them.
+func NormalizeName(name string) string {
+	for _, prefix := range knownCollectionPrefixes {
+		if short, ok := strings.CutPrefix(name, prefix); ok {
+			return short
+		}
+	}
+	return name
 }
 
 // Names returns every registered module name, sorted.
