@@ -198,16 +198,16 @@ func TestModuleRedfishInfoInvalidCategoryFailsLoud(t *testing.T) {
 	}
 }
 
-func TestModuleRedfishInfoNotYetWiredCategoryFailsLoud(t *testing.T) {
+func TestModuleRedfishInfoNotYetWiredCommandFailsLoud(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
-		"category": []any{"Manager"},
+		"category": []any{"Update"}, "command": []any{"GetUpdateStatus"},
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.Failed {
-		t.Fatalf("res = %+v, want Failed (Manager not wired yet this batch)", res)
+		t.Fatalf("res = %+v, want Failed (GetUpdateStatus not wired this batch — no way to recover the real HTTP status code)", res)
 	}
 }
 
@@ -557,5 +557,289 @@ func TestModuleRedfishInfoGetSessionsMissingHardFails(t *testing.T) {
 	}
 	if !res.Failed {
 		t.Fatalf("res = %+v, want Failed (no SessionService/Sessions resource at all is this category's own hard fail)", res)
+	}
+}
+
+func TestModuleRedfishInfoGetFirmwareInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{"UpdateService":{"@odata.id":"/redfish/v1/UpdateService"}}`}
+	svcCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[svcCmd] = remoteexec.Result{RC: 0, Stdout: `{"FirmwareInventory":{"@odata.id":"/redfish/v1/UpdateService/FirmwareInventory"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService/FirmwareInventory; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/UpdateService/FirmwareInventory/BMC"}]}`}
+	memberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService/FirmwareInventory/BMC; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[memberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Name":"BMC Firmware","Id":"BMC","Version":"1.2.3","Updateable":true,"Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Update"}, "command": []any{"GetFirmwareInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	fw, _ := facts["firmware"].(map[string]any)
+	if fw["ret"] != true {
+		t.Fatalf("firmware = %+v", fw)
+	}
+	entries, _ := fw["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1", entries)
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["Version"] != "1.2.3" || entry["Name"] != "BMC Firmware" {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if _, ok := entry["Unrelated"]; ok {
+		t.Fatalf("entry should not include unrelated properties: %+v", entry)
+	}
+}
+
+func TestModuleRedfishInfoGetFirmwareInventoryMissingIsSoftFailure(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{"UpdateService":{"@odata.id":"/redfish/v1/UpdateService"}}`}
+	svcCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[svcCmd] = remoteexec.Result{RC: 0, Stdout: `{}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Update"}, "command": []any{"GetFirmwareInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok (a per-command problem is a soft embed, not a module failure)", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	fw, _ := facts["firmware"].(map[string]any)
+	if fw["ret"] != false || fw["msg"] != "No FirmwareInventory resource found" {
+		t.Fatalf("firmware = %+v", fw)
+	}
+}
+
+func TestModuleRedfishInfoGetFirmwareUpdateCapabilities(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{"UpdateService":{"@odata.id":"/redfish/v1/UpdateService"}}`}
+	svcCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[svcCmd] = remoteexec.Result{RC: 0, Stdout: `{"MultipartHttpPushUri":"/redfish/v1/UpdateService/upload","Actions":{"#UpdateService.SimpleUpdate":{"title":"Simple Update","TransferProtocol@Redfish.AllowableValues":["HTTP","HTTPS"]}}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Update"}, "command": []any{"GetFirmwareUpdateCapabilities"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	caps, _ := facts["firmware_update_capabilities"].(map[string]any)
+	if caps["ret"] != true || caps["multipart_supported"] != true {
+		t.Fatalf("caps = %+v", caps)
+	}
+	entries, _ := caps["entries"].(map[string]any)
+	values, _ := entries["Simple Update"].([]any)
+	if len(values) != 2 || values[0] != "HTTP" {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
+func TestModuleRedfishInfoGetFirmwareUpdateCapabilitiesNoActionsSoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{"UpdateService":{"@odata.id":"/redfish/v1/UpdateService"}}`}
+	svcCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/UpdateService; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[svcCmd] = remoteexec.Result{RC: 0, Stdout: `{}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Update"}, "command": []any{"GetFirmwareUpdateCapabilities"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	caps, _ := facts["firmware_update_capabilities"].(map[string]any)
+	if caps["ret"] != false || caps["msg"] != "Key Actions not found." {
+		t.Fatalf("caps = %+v", caps)
+	}
+}
+
+func TestModuleRedfishInfoUpdateServiceMissingHardFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	rootCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com root; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[rootCmd] = remoteexec.Result{RC: 0, Stdout: `{}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Update"}, "command": []any{"GetFirmwareInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (no UpdateService resource at all is a category-level hard fail)", res)
+	}
+}
+
+func TestModuleRedfishInfoGetManagerInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","Id":"1","FirmwareVersion":"2.50","ManagerType":"BMC","Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetManagerInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	manager, _ := facts["manager"].([]any)
+	if len(manager) != 1 {
+		t.Fatalf("manager = %+v, want 1 entry", manager)
+	}
+	pair, _ := manager[0].([]any)
+	uriMap, _ := pair[0].(map[string]any)
+	if uriMap["manager_uri"] != "/redfish/v1/Managers/1/" {
+		t.Fatalf("uriMap = %+v", uriMap)
+	}
+	entries, _ := pair[1].(map[string]any)
+	if entries["FirmwareVersion"] != "2.50" || entries["ManagerType"] != "BMC" {
+		t.Fatalf("entries = %+v", entries)
+	}
+	if _, ok := entries["Unrelated"]; ok {
+		t.Fatalf("entries should not include unrelated properties: %+v", entries)
+	}
+}
+
+func TestModuleRedfishInfoGetNetworkProtocols(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","NetworkProtocol":{"@odata.id":"/redfish/v1/Managers/1/NetworkProtocol"}}`}
+	npCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/NetworkProtocol; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[npCmd] = remoteexec.Result{RC: 0, Stdout: `{"SNMP":{"ProtocolEnabled":true,"Port":161},"HTTPS":{"ProtocolEnabled":true,"Port":443},"Unrelated":"x","Id":"NetworkProtocol"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetNetworkProtocols"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	np, _ := facts["network_protocols"].(map[string]any)
+	if np["ret"] != true {
+		t.Fatalf("np = %+v", np)
+	}
+	entries, _ := np["entries"].(map[string]any)
+	if _, ok := entries["SNMP"]; !ok {
+		t.Fatalf("entries = %+v, want SNMP", entries)
+	}
+	if _, ok := entries["HTTPS"]; !ok {
+		t.Fatalf("entries = %+v, want HTTPS", entries)
+	}
+	if _, ok := entries["Unrelated"]; ok {
+		t.Fatalf("entries should not include non-protocol properties: %+v", entries)
+	}
+	if _, ok := entries["Id"]; ok {
+		t.Fatalf("entries should not include Id: %+v", entries)
+	}
+}
+
+func TestModuleRedfishInfoGetServiceIdentification(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","Id":"1"}`}
+	svcIDCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[svcIDCmd] = remoteexec.Result{RC: 0, Stdout: `{"ServiceIdentification":"ABC123"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetServiceIdentification"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	svcID, _ := facts["service_id"].(map[string]any)
+	if svcID["ret"] != true || svcID["service_identification"] != "ABC123" {
+		t.Fatalf("svcID = %+v", svcID)
+	}
+}
+
+func TestModuleRedfishInfoGetServiceIdentificationMissingHardFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","Id":"1"}`}
+	svcIDCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[svcIDCmd] = remoteexec.Result{RC: 0, Stdout: `{}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetServiceIdentification"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (real get_service_identification calls fail_json directly, a real exception to this module's own soft-fail convention)", res)
+	}
+}
+
+func TestModuleRedfishInfoGetManagerNicInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","EthernetInterfaces":{"@odata.id":"/redfish/v1/Managers/1/EthernetInterfaces"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/EthernetInterfaces; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/EthernetInterfaces/eth0"}]}`}
+	nicCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/EthernetInterfaces/eth0; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[nicCmd] = remoteexec.Result{RC: 0, Stdout: `{"Name":"Manager Ethernet Interface","MACAddress":"aa:bb:cc:dd:ee:ff","Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetManagerNicInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	nics, _ := facts["manager_nics"].([]any)
+	if len(nics) != 1 {
+		t.Fatalf("nics = %+v, want 1 entry", nics)
+	}
+	pair, _ := nics[0].([]any)
+	uriMap, _ := pair[0].(map[string]any)
+	if uriMap["resource_uri"] != "/redfish/v1/Managers/1/" {
+		t.Fatalf("uriMap = %+v", uriMap)
+	}
+	entries, _ := pair[1].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1 nic", entries)
+	}
+	nic, _ := entries[0].(map[string]any)
+	if nic["MACAddress"] != "aa:bb:cc:dd:ee:ff" {
+		t.Fatalf("nic = %+v", nic)
+	}
+	if _, ok := nic["Unrelated"]; ok {
+		t.Fatalf("nic should not include unrelated properties: %+v", nic)
+	}
+}
+
+func TestModuleRedfishInfoManagerResourceMissingHardFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 1, Stderr: "Error, could not connect"}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetManagerInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed (no Managers resource at all is a category-level hard fail)", res)
 	}
 }
