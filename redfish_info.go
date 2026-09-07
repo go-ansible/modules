@@ -50,26 +50,44 @@ import (
 //     failed GET as `available: false` rather than a hard error (a
 //     genuinely graceful "is it there at all" check), reproduced here
 //     the same way.
-//   - Systems: GetSystemInventory, GetBootOverride,
-//     GetPowerRestorePolicy, GetHealthReport, each reading the bare
-//     `Systems` resource (redfishtool's own --One default — the
-//     single-system case, same disclosed narrower-than-real-Ansible's-
-//     multi-system aggregation this whole sub-batch already relies on)
-//     and extracting exactly the properties real get_system_inventory/
-//     get_boot_override/get_power_restore_policy/
-//     get_system_health_report themselves read — confirmed field-by-
-//     field against their own source, not guessed. Every one of these
-//     four is real Ansible's own AGGREGATE-wrapped form
-//     (`get_multi_system_inventory`/`get_multi_boot_override`/
-//     `get_multi_power_restore_policy`/`get_multi_system_health_report`,
-//     confirmed from redfish_info.py's own dispatch table — NOT the
-//     bare non-aggregate function this port's own doc comments had
-//     originally assumed), so the real output shape is TWO-level:
-//     `{"ret": bool, "entries": [({"system_uri": uri}, {...})]}` — see
-//     redfishAggregateOne's own doc comment for the real bug this
-//     fixed in an earlier increment (the outer `{"ret":..,
-//     "entries":..}` wrapper was missing entirely). GetBootOverride
-//     additionally reproduces a real, easy-to-miss distinction: a
+//   - Systems: 10 of 14 real commands. GetSystemInventory,
+//     GetBootOverride, GetPowerRestorePolicy, GetHealthReport,
+//     GetNicInventory, GetVirtualMedia, GetCpuInventory,
+//     GetMemoryInventory, GetBiosAttributes, GetBootOrder, each reading
+//     the bare `Systems` resource (redfishtool's own --One default —
+//     the single-system case, same disclosed narrower-than-real-
+//     Ansible's-multi-system aggregation this whole sub-batch already
+//     relies on) and extracting exactly the properties their own real
+//     get_* counterpart reads — confirmed field-by-field against their
+//     own source, not guessed. Every one of these ten is real Ansible's
+//     own AGGREGATE-wrapped form (`get_multi_system_inventory`/
+//     `get_multi_boot_override`/`get_multi_power_restore_policy`/
+//     `get_multi_system_health_report`/`get_multi_nic_inventory`/
+//     `get_multi_virtualmedia`/`get_multi_cpu_inventory`/
+//     `get_multi_memory_inventory`/`get_multi_bios_attributes`/
+//     `get_multi_boot_order`, confirmed from redfish_info.py's own
+//     dispatch table — NOT the bare non-aggregate function this port's
+//     own doc comments had originally assumed), so the real output
+//     shape is TWO-level: `{"ret": bool, "entries": [({"system_uri":
+//     uri}, {...})]}` — see redfishAggregateOne's own doc comment for
+//     the real bug this fixed in an earlier increment (the outer
+//     `{"ret":.., "entries":..}` wrapper was missing entirely).
+//     GetNicInventory/GetVirtualMedia are the SAME real functions
+//     Manager's own GetManagerNicInventory/GetVirtualMedia already
+//     call (`get_multi_nic_inventory`/`get_multi_virtualmedia` take a
+//     `resource_type` argument selecting Systems vs Manager) — this
+//     port's own redfishGetNicInventory/redfishGetVirtualMediaInventory
+//     serve both. GetMemoryInventory additionally filters out any DIMM
+//     whose own Status.State is "Absent" (a real, easy-to-miss detail —
+//     an empty DIMM slot still has its own resource). GetBiosAttributes
+//     copies an entire "Attributes" object verbatim, no per-key
+//     whitelist. GetBootOrder resolves each BootOptionReference in the
+//     boot order to its own display name via a real, genuinely
+//     fail-soft helper (`_get_boot_options_dict` — any missing link or
+//     malformed member returns an EMPTY dict silently, never a
+//     failure), falling back to a bare `{"BootOptionReference": ref}`
+//     entry when no match is found. GetBootOverride additionally
+//     reproduces a real, easy-to-miss distinction: a
 //     missing "Boot" key or a missing "BootSourceOverrideEnabled" key
 //     are each their own real soft failure, but aggregate()'s own
 //     source discards the inner "msg" entirely — both surface as a
@@ -161,12 +179,17 @@ import (
 // resource — skips a redundant GET and uses the embedded object as-is).
 //
 // 4 more Chassis commands (GetChassisThermals, GetPsuInventory, and
-// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) and 10 more
-// Systems commands (GetCpuInventory, GetMemoryInventory,
-// GetNicInventory, GetStorageControllerInventory, GetDiskInventory,
-// GetVolumeInventory, GetBiosAttributes, GetBootOrder, GetVirtualMedia,
-// GetBiosRegistries) remain unwired — a later increment of this same
-// batch.
+// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) and 4 more
+// Systems commands remain unwired: GetStorageControllerInventory and
+// GetDiskInventory/GetVolumeInventory (each a genuinely deep,
+// multi-level, dual-code-path traversal — Storage vs the older
+// SimpleStorage resource shape, nested controller-name resolution with
+// several real fallback cases) and GetBiosRegistries (needs a
+// vendor-aware `Location`/`Language` lookup with real, disclosed HPE
+// iLO4/iLO5-specific workarounds this port has no hardware to verify
+// against) — a later increment of this same batch, or left
+// permanently disclosed if the vendor-specific pieces prove
+// unverifiable.
 //
 // # A real bug a prior increment fixed
 //
@@ -257,6 +280,42 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 						return Result{}, err
 					}
 					facts["health_report"] = v
+				case "GetNicInventory":
+					v, err := redfishGetMultiNicInventory(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["nic"] = v
+				case "GetVirtualMedia":
+					v, err := redfishGetMultiVirtualMedia(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["virtual_media"] = v
+				case "GetCpuInventory":
+					v, err := redfishGetCPUInventory(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["cpu"] = v
+				case "GetMemoryInventory":
+					v, err := redfishGetMemoryInventory(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["memory"] = v
+				case "GetBiosAttributes":
+					v, err := redfishGetMultiBiosAttributes(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["bios_attribute"] = v
+				case "GetBootOrder":
+					v, err := redfishGetMultiBootOrder(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["boot_order"] = v
 				}
 
 			case "Chassis":
@@ -373,7 +432,7 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 					}
 					facts["service_id"] = v
 				case "GetManagerNicInventory":
-					v, err := redfishGetManagerNicInventory(ctx, conn, baseuri, username, password, managerURI, mgrData)
+					v, err := redfishGetMultiNicInventory(ctx, conn, baseuri, username, password, managerURI)
 					if err != nil {
 						return Result{}, err
 					}
@@ -385,7 +444,7 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 					}
 					facts["log"] = v
 				case "GetVirtualMedia":
-					v, err := redfishGetVirtualMedia(ctx, conn, baseuri, username, password, managerURI, mgrData)
+					v, err := redfishGetMultiVirtualMedia(ctx, conn, baseuri, username, password, managerURI)
 					if err != nil {
 						return Result{}, err
 					}
@@ -411,7 +470,11 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 }
 
 var redfishInfoCategories = map[string][]string{
-	"Systems":  {"GetSystemInventory", "GetBootOverride", "GetPowerRestorePolicy", "GetHealthReport"},
+	"Systems": {
+		"GetSystemInventory", "GetBootOverride", "GetPowerRestorePolicy", "GetHealthReport",
+		"GetNicInventory", "GetVirtualMedia", "GetCpuInventory", "GetMemoryInventory",
+		"GetBiosAttributes", "GetBootOrder",
+	},
 	"Chassis":  {"GetChassisInventory", "GetFanInventory", "GetChassisPower", "GetHealthReport"},
 	"Accounts": {"ListUsers", "GetAccountServiceConfig"},
 	"Sessions": {"GetSessions"},
@@ -1062,39 +1125,67 @@ func redfishNicEntries(data map[string]any) map[string]any {
 	return entries
 }
 
-// redfishGetManagerNicInventory reproduces real get_nic_inventory for
-// the Manager's own EthernetInterfaces: list the collection (redfishtool's
-// own `Managers EthernetInterfaces list`), GET each member, whitelist via
-// redfishNicEntries, wrapped in the same one-element aggregate-tuple
-// shape real get_multi_nic_inventory itself produces under its own
-// "resource_uri" key (confirmed from its own source — a different key
-// than GetManagerInventory's "manager_uri", not a typo).
-func redfishGetManagerNicInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) (map[string]any, error) {
-	link, ok := mgrData["EthernetInterfaces"].(map[string]any)
-	if !ok {
-		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
-	}
-	uri, _ := link["@odata.id"].(string)
-	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+// redfishGetNicInventory reproduces real get_nic_inventory exactly: it
+// does its OWN independent GET of resourceURI (real Ansible never
+// reuses an already-fetched category-level resource here, confirmed
+// from its own source) to find the "EthernetInterfaces" link (a
+// missing key is real get_nic_inventory's own soft failure, "Key
+// EthernetInterfaces not found" — not silently treated as empty),
+// lists that collection, GETs each member, and whitelists via
+// redfishNicEntries (get_nic's own whitelist, shared with
+// GetHostInterfaces' embedded NIC lookups). Serves BOTH Systems'
+// GetNicInventory and Manager's GetManagerNicInventory — real
+// get_multi_nic_inventory(resource_type) is the SAME function for
+// both, selecting only which URI list to iterate; this port's own
+// single-resource narrowing makes that selection trivial (the caller
+// just passes its own single systemURI/managerURI).
+func redfishGetNicInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, resourceURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", resourceURI)
 	if err != nil {
 		return nil, err
 	}
 	if r.RC != 0 {
-		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	link, ok := data["EthernetInterfaces"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": "Key EthernetInterfaces not found"}, nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if mr.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(mr)}, nil
 	}
 	entries := []any{}
 	for _, memberURI := range members {
-		var data map[string]any
-		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", memberURI)
+		var nicData map[string]any
+		nr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &nicData, "raw", "GET", memberURI)
 		if err != nil {
 			return nil, err
 		}
-		if mr.RC != 0 {
+		if nr.RC != 0 {
 			continue
 		}
-		entries = append(entries, redfishNicEntries(data))
+		entries = append(entries, redfishNicEntries(nicData))
 	}
-	return redfishAggregateOne("resource_uri", managerURI, entries), nil
+	return map[string]any{"ret": true, "entries": entries}, nil
+}
+
+// redfishGetMultiNicInventory wraps redfishGetNicInventory exactly as
+// real get_multi_nic_inventory's own inline aggregation does, under
+// its own "resource_uri" key (confirmed from its own source — a
+// different key than GetManagerInventory's "manager_uri"/
+// GetSystemInventory's "system_uri", not a typo).
+func redfishGetMultiNicInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, resourceURI string) (map[string]any, error) {
+	inner, err := redfishGetNicInventory(ctx, conn, baseuri, username, password, resourceURI)
+	if err != nil {
+		return nil, err
+	}
+	return redfishWrapAggregate("resource_uri", resourceURI, inner), nil
 }
 
 // redfishGetLogs reproduces real get_logs exactly: find the Manager's
@@ -1174,24 +1265,36 @@ func redfishGetLogs(ctx context.Context, conn remoteexec.Connection, baseuri, us
 	return map[string]any{"ret": true, "entries": logs}, nil
 }
 
-// redfishGetVirtualMedia reproduces real get_virtualmedia/
-// get_multi_virtualmedia for the Manager's own VirtualMedia collection:
-// find the "VirtualMedia" link, list its members, GET each, copy the
-// 10 properties real get_virtualmedia itself reads, wrapped under real
-// Ansible's own "resource_uri" key (get_multi_virtualmedia's own tuple
-// shape — the same shape and key GetManagerNicInventory already uses).
-func redfishGetVirtualMedia(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) (map[string]any, error) {
-	link, ok := mgrData["VirtualMedia"].(map[string]any)
-	if !ok {
-		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
-	}
-	uri, _ := link["@odata.id"].(string)
-	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+// redfishGetVirtualMediaInventory reproduces real get_virtualmedia
+// exactly: it does its OWN independent GET of resourceURI (confirmed
+// from its own source, same "no reuse of category-level data"
+// structure as get_nic_inventory) to find the "VirtualMedia" link (a
+// missing key is real get_virtualmedia's own soft failure, "Key
+// VirtualMedia not found"), lists that collection, GETs each member,
+// and copies the 10 properties real get_virtualmedia itself reads.
+// Serves BOTH Systems' and Manager's GetVirtualMedia — real
+// get_multi_virtualmedia(resource_type) is the SAME function for
+// both.
+func redfishGetVirtualMediaInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, resourceURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", resourceURI)
 	if err != nil {
 		return nil, err
 	}
 	if r.RC != 0 {
-		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	link, ok := data["VirtualMedia"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": "Key VirtualMedia not found"}, nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if mr.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(mr)}, nil
 	}
 	properties := []string{
 		"Description", "ConnectedVia", "Id", "MediaTypes", "Image",
@@ -1199,23 +1302,35 @@ func redfishGetVirtualMedia(ctx context.Context, conn remoteexec.Connection, bas
 	}
 	entries := []any{}
 	for _, memberURI := range members {
-		var data map[string]any
-		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", memberURI)
+		var vmData map[string]any
+		vr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &vmData, "raw", "GET", memberURI)
 		if err != nil {
 			return nil, err
 		}
-		if mr.RC != 0 {
+		if vr.RC != 0 {
 			continue
 		}
 		entry := map[string]any{}
 		for _, p := range properties {
-			if v, ok := data[p]; ok {
+			if v, ok := vmData[p]; ok {
 				entry[p] = v
 			}
 		}
 		entries = append(entries, entry)
 	}
-	return redfishAggregateOne("resource_uri", managerURI, entries), nil
+	return map[string]any{"ret": true, "entries": entries}, nil
+}
+
+// redfishGetMultiVirtualMedia wraps redfishGetVirtualMediaInventory
+// exactly as real get_multi_virtualmedia's own inline aggregation
+// does, under its own "resource_uri" key — the same shape and key
+// redfishGetMultiNicInventory already uses.
+func redfishGetMultiVirtualMedia(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, resourceURI string) (map[string]any, error) {
+	inner, err := redfishGetVirtualMediaInventory(ctx, conn, baseuri, username, password, resourceURI)
+	if err != nil {
+		return nil, err
+	}
+	return redfishWrapAggregate("resource_uri", resourceURI, inner), nil
 }
 
 // redfishGetHostInterfaces reproduces real get_hostinterfaces for this
@@ -1520,17 +1635,20 @@ func redfishGetHealthReport(ctx context.Context, conn remoteexec.Connection, bas
 	return map[string]any{"ret": true, "entries": health}, nil
 }
 
-// redfishWrapMultiHealthReport reproduces real get_multi_*_health_report's
-// own aggregate() wrapping around a SINGLE resource's
-// get_health_report result — confirmed from aggregate()'s own source:
-// it pops the inner "ret", and only appends `({key: uri}, inner
-// "entries")` to its own "entries" list when the inner result actually
-// HAS an "entries" key at all (a transport-level failure returns
-// early with no "entries" key, so aggregate() silently contributes
-// NOTHING for that member — same lossy "message discarded, just
-// ret:false + empty entries" pattern already confirmed for
-// GetBootOverride's own aggregate wrap).
-func redfishWrapMultiHealthReport(key, uri string, inner map[string]any) map[string]any {
+// redfishWrapAggregate reproduces real Ansible's own shared aggregate()
+// wrapping around a SINGLE resource's own inner get_* result —
+// confirmed from aggregate()'s own source: it pops the inner "ret",
+// and only appends `({key: uri}, inner "entries")` to its own
+// "entries" list when the inner result actually HAS an "entries" key
+// at all (a transport-level failure returns early with no "entries"
+// key, so aggregate() silently contributes NOTHING for that member —
+// same lossy "message discarded, just ret:false + empty entries"
+// pattern already confirmed for GetBootOverride's own aggregate wrap).
+// Originally written just for the 3 get_multi_*_health_report callers;
+// generalized (name and all) the moment GetNicInventory/GetVirtualMedia
+// for the Systems category needed the identical wrap around
+// get_nic_inventory/get_virtualmedia's own inner results too.
+func redfishWrapAggregate(key, uri string, inner map[string]any) map[string]any {
 	entries, ok := inner["entries"]
 	if !ok {
 		return map[string]any{"ret": false, "entries": []any{}}
@@ -1551,7 +1669,7 @@ func redfishGetSystemHealthReport(ctx context.Context, conn remoteexec.Connectio
 	if err != nil {
 		return nil, err
 	}
-	return redfishWrapMultiHealthReport("system_uri", systemURI, inner), nil
+	return redfishWrapAggregate("system_uri", systemURI, inner), nil
 }
 
 // redfishGetChassisHealthReport implements real get_chassis_health_report's
@@ -1565,7 +1683,7 @@ func redfishGetChassisHealthReport(ctx context.Context, conn remoteexec.Connecti
 	if err != nil {
 		return nil, err
 	}
-	return redfishWrapMultiHealthReport("chassis_uri", chassisURI, inner), nil
+	return redfishWrapAggregate("chassis_uri", chassisURI, inner), nil
 }
 
 // redfishGetManagerHealthReport implements real
@@ -1578,5 +1696,236 @@ func redfishGetManagerHealthReport(ctx context.Context, conn remoteexec.Connecti
 	if err != nil {
 		return nil, err
 	}
-	return redfishWrapMultiHealthReport("manager_uri", managerURI, inner), nil
+	return redfishWrapAggregate("manager_uri", managerURI, inner), nil
+}
+
+// redfishGetCPUInventory reproduces real get_cpu_inventory exactly:
+// its own independent GET of systemURI, find the "Processors" link (a
+// missing key is real get_cpu_inventory's own soft failure, "Key
+// Processors not found"), list that collection, GET each member, and
+// copy the 9 properties real get_cpu_inventory itself reads.
+func redfishGetCPUInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", systemURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	link, ok := data["Processors"].(map[string]any)
+	if !ok {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Key Processors not found"}), nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if mr.RC != 0 {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": redfishtoolErrMsg(mr)}), nil
+	}
+	properties := []string{
+		"Id", "Name", "Manufacturer", "Model", "MaxSpeedMHz",
+		"ProcessorArchitecture", "TotalCores", "TotalThreads", "Status",
+	}
+	entries := []any{}
+	for _, memberURI := range members {
+		var cpuData map[string]any
+		cr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &cpuData, "raw", "GET", memberURI)
+		if err != nil {
+			return nil, err
+		}
+		if cr.RC != 0 {
+			continue
+		}
+		entry := map[string]any{}
+		for _, p := range properties {
+			if v, ok := cpuData[p]; ok {
+				entry[p] = v
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
+}
+
+// redfishGetMemoryInventory reproduces real get_memory_inventory
+// exactly: its own independent GET of systemURI, find the "Memory"
+// link (a missing key is real get_memory_inventory's own soft
+// failure, "Key Memory not found"), list that collection, GET each
+// member, skip any DIMM whose own Status.State is "Absent" (a real,
+// easy-to-miss filter — an empty DIMM slot still has its own resource,
+// just marked absent), and copy the 11 properties real
+// get_memory_inventory itself reads.
+func redfishGetMemoryInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", systemURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	link, ok := data["Memory"].(map[string]any)
+	if !ok {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Key Memory not found"}), nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if mr.RC != 0 {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": redfishtoolErrMsg(mr)}), nil
+	}
+	properties := []string{
+		"Id", "SerialNumber", "MemoryDeviceType", "PartNumber", "MemoryLocation",
+		"RankCount", "CapacityMiB", "OperatingMemoryModes", "Status", "Manufacturer", "Name",
+	}
+	entries := []any{}
+	for _, memberURI := range members {
+		var dimmData map[string]any
+		dr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &dimmData, "raw", "GET", memberURI)
+		if err != nil {
+			return nil, err
+		}
+		if dr.RC != 0 {
+			continue
+		}
+		status, ok := dimmData["Status"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if state, _ := status["State"].(string); state == "Absent" {
+			continue
+		}
+		entry := map[string]any{}
+		for _, p := range properties {
+			if v, ok := dimmData[p]; ok {
+				entry[p] = v
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
+}
+
+// redfishGetMultiBiosAttributes reproduces real get_bios_attributes
+// exactly: its own independent GET of systemURI, find the "Bios" link
+// (a missing key is real get_bios_attributes' own soft failure, "Key
+// Bios not found"), GET that resource, and copy its entire
+// "Attributes" object verbatim — real get_bios_attributes does no
+// per-key whitelist at all, unlike most other get_* functions in this
+// file. Real Ansible accesses `data["Attributes"]` with no `.get()`
+// fallback (an unhandled KeyError if ever absent, a real but
+// unverifiable-without-hardware edge case); this port instead reports
+// empty entries rather than crashing, a disclosed, deliberate
+// divergence for exactly that unreachable-in-practice case.
+func redfishGetMultiBiosAttributes(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", systemURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	link, ok := data["Bios"].(map[string]any)
+	if !ok {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Key Bios not found"}), nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	var biosData map[string]any
+	br, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &biosData, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if br.RC != 0 {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": redfishtoolErrMsg(br)}), nil
+	}
+	attributes, _ := biosData["Attributes"].(map[string]any)
+	if attributes == nil {
+		attributes = map[string]any{}
+	}
+	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": attributes}), nil
+}
+
+// redfishGetBootOptionsDict reproduces real _get_boot_options_dict
+// exactly: if `boot` (the Boot object) has no "BootOptions" link, or
+// anything along the way fails or is malformed, real Ansible returns
+// an EMPTY dict silently (never a failure) — reproduced verbatim, not
+// improved to surface a diagnostic.
+func redfishGetBootOptionsDict(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, boot map[string]any) map[string]any {
+	empty := map[string]any{}
+	link, ok := boot["BootOptions"].(map[string]any)
+	if !ok {
+		return empty
+	}
+	uri, ok := link["@odata.id"].(string)
+	if !ok || uri == "" {
+		return empty
+	}
+	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil || r.RC != 0 {
+		return empty
+	}
+	result := map[string]any{}
+	for _, memberURI := range members {
+		var data map[string]any
+		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", memberURI)
+		if err != nil || mr.RC != 0 {
+			return empty
+		}
+		ref, ok := data["BootOptionReference"].(string)
+		if !ok {
+			return empty
+		}
+		props := map[string]any{}
+		for _, p := range []string{"DisplayName", "BootOptionReference"} {
+			if v, ok := data[p]; ok {
+				props[p] = v
+			}
+		}
+		result[ref] = props
+	}
+	return result
+}
+
+// redfishGetMultiBootOrder reproduces real get_boot_order exactly: its
+// own independent GET of systemURI, requiring BOTH "Boot" and its own
+// "BootOrder" property (a missing either is real get_boot_order's own
+// soft failure, "Key BootOrder not found"), then resolves each
+// BootOptionReference in the order list to its own display info via
+// redfishGetBootOptionsDict — falling back to a bare
+// `{"BootOptionReference": ref}` entry when that lookup came back
+// empty (real Ansible's own `boot_options_dict.get(ref, {...})`).
+func redfishGetMultiBootOrder(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", systemURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	boot, ok := data["Boot"].(map[string]any)
+	if !ok {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Key BootOrder not found"}), nil
+	}
+	rawOrder, ok := boot["BootOrder"].([]any)
+	if !ok {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Key BootOrder not found"}), nil
+	}
+	bootOptionsDict := redfishGetBootOptionsDict(ctx, conn, baseuri, username, password, boot)
+	entries := []any{}
+	for _, rawRef := range rawOrder {
+		ref, _ := rawRef.(string)
+		if entry, ok := bootOptionsDict[ref]; ok {
+			entries = append(entries, entry)
+		} else {
+			entries = append(entries, map[string]any{"BootOptionReference": ref})
+		}
+	}
+	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
 }

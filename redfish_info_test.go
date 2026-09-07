@@ -861,7 +861,14 @@ func TestModuleRedfishInfoGetServiceIdentificationMissingHardFails(t *testing.T)
 func TestModuleRedfishInfoGetManagerNicInventory(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
-	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","EthernetInterfaces":{"@odata.id":"/redfish/v1/Managers/1/EthernetInterfaces"}}`}
+	mgrJSON := `{"@odata.id":"/redfish/v1/Managers/1/","EthernetInterfaces":{"@odata.id":"/redfish/v1/Managers/1/EthernetInterfaces"}}`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
+	// redfishGetNicInventory does its own independent raw GET of the
+	// manager's own URI (matching real get_nic_inventory's own
+	// independent get_request), a second mock beyond the category-level
+	// bare fetch.
+	mgrRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrRawCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
 	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/EthernetInterfaces; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/EthernetInterfaces/eth0"}]}`}
 	nicCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/EthernetInterfaces/eth0; rm -f /tmp/redfishtool-cfg.json`
@@ -991,7 +998,14 @@ func TestModuleRedfishInfoGetLogsNoLogServicesSoftFails(t *testing.T) {
 func TestModuleRedfishInfoGetVirtualMedia(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
-	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","VirtualMedia":{"@odata.id":"/redfish/v1/Managers/1/VirtualMedia"}}`}
+	mgrJSON := `{"@odata.id":"/redfish/v1/Managers/1/","VirtualMedia":{"@odata.id":"/redfish/v1/Managers/1/VirtualMedia"}}`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
+	// redfishGetVirtualMediaInventory does its own independent raw GET
+	// of the manager's own URI (matching real get_virtualmedia's own
+	// independent get_request), a second mock beyond the category-level
+	// bare fetch.
+	mgrRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrRawCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
 	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/VirtualMedia; rm -f /tmp/redfishtool-cfg.json`
 	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/VirtualMedia/CD1"}]}`}
 	memberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/VirtualMedia/CD1; rm -f /tmp/redfishtool-cfg.json`
@@ -1032,10 +1046,13 @@ func TestModuleRedfishInfoGetVirtualMedia(t *testing.T) {
 	}
 }
 
-func TestModuleRedfishInfoGetVirtualMediaNoLinkIsEmpty(t *testing.T) {
+func TestModuleRedfishInfoGetVirtualMediaNoLinkSoftFails(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
-	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/"}`}
+	mgrJSON := `{"@odata.id":"/redfish/v1/Managers/1/"}`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
+	mgrRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrRawCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
 	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
 		"category": []any{"Manager"}, "command": []any{"GetVirtualMedia"},
 	}))
@@ -1043,13 +1060,19 @@ func TestModuleRedfishInfoGetVirtualMediaNoLinkIsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	if res.Failed {
-		t.Fatalf("res = %+v", res)
+		t.Fatalf("res = %+v, want ok (a per-command problem is a soft embed, not a module failure)", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
 	vmResult, _ := facts["virtual_media"].(map[string]any)
-	vm, _ := vmResult["entries"].([]any)
-	pair, _ := vm[0].([]any)
-	entries, _ := pair[1].([]any)
+	// Real get_virtualmedia treats a missing "VirtualMedia" key as its
+	// own soft failure ("Key VirtualMedia not found"), and
+	// aggregate()'s own source discards that message entirely — the
+	// final shape is a bare ret:false with empty entries, same lossy
+	// pattern already confirmed for GetBootOverride/GetNicInventory.
+	if vmResult["ret"] != false {
+		t.Fatalf("virtual_media = %+v, want ret:false", vmResult)
+	}
+	entries, _ := vmResult["entries"].([]any)
 	if len(entries) != 0 {
 		t.Fatalf("entries = %+v, want empty", entries)
 	}
@@ -1285,5 +1308,306 @@ func TestModuleRedfishInfoGetManagerHealthReport(t *testing.T) {
 	}
 	if len(health) != 1 {
 		t.Fatalf("health = %+v, want only the Manager key", health)
+	}
+}
+
+func TestModuleRedfishInfoGetNicInventorySystems(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","EthernetInterfaces":{"@odata.id":"/redfish/v1/Systems/1/EthernetInterfaces"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/EthernetInterfaces; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/EthernetInterfaces/NIC1"}]}`}
+	nicCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/EthernetInterfaces/NIC1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[nicCmd] = remoteexec.Result{RC: 0, Stdout: `{"Name":"NIC.1","MACAddress":"de:ad:be:ef:00:01","Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetNicInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	nicResult, _ := facts["nic"].(map[string]any)
+	if nicResult["ret"] != true {
+		t.Fatalf("nic = %+v", nicResult)
+	}
+	entries, _ := nicResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	uriMap, _ := pair[0].(map[string]any)
+	if uriMap["resource_uri"] != "/redfish/v1/Systems/1/" {
+		t.Fatalf("uriMap = %+v", uriMap)
+	}
+	nics, _ := pair[1].([]any)
+	if len(nics) != 1 {
+		t.Fatalf("nics = %+v, want 1", nics)
+	}
+	nic, _ := nics[0].(map[string]any)
+	if nic["MACAddress"] != "de:ad:be:ef:00:01" {
+		t.Fatalf("nic = %+v", nic)
+	}
+	if _, ok := nic["Unrelated"]; ok {
+		t.Fatalf("nic should not include unrelated properties: %+v", nic)
+	}
+}
+
+func TestModuleRedfishInfoGetNicInventoryMissingKeySoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetNicInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok (a per-command problem is a soft embed, not a module failure)", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	nicResult, _ := facts["nic"].(map[string]any)
+	if nicResult["ret"] != false {
+		t.Fatalf("nic = %+v, want ret:false (EthernetInterfaces key missing)", nicResult)
+	}
+}
+
+func TestModuleRedfishInfoGetVirtualMediaSystems(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","VirtualMedia":{"@odata.id":"/redfish/v1/Systems/1/VirtualMedia"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/VirtualMedia; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/VirtualMedia/RemovableDisk1"}]}`}
+	memberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/VirtualMedia/RemovableDisk1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[memberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"RemovableDisk1","Name":"Removable Disk","MediaTypes":["USBStick"]}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetVirtualMedia"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	vmResult, _ := facts["virtual_media"].(map[string]any)
+	if vmResult["ret"] != true {
+		t.Fatalf("virtual_media = %+v", vmResult)
+	}
+	entries, _ := vmResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	vm, _ := pair[1].([]any)
+	if len(vm) != 1 {
+		t.Fatalf("vm = %+v, want 1", vm)
+	}
+	entry, _ := vm[0].(map[string]any)
+	if entry["Name"] != "Removable Disk" {
+		t.Fatalf("entry = %+v", entry)
+	}
+}
+
+func TestModuleRedfishInfoGetCpuInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Processors":{"@odata.id":"/redfish/v1/Systems/1/Processors"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Processors; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Processors/CPU1"}]}`}
+	cpuCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Processors/CPU1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[cpuCmd] = remoteexec.Result{RC: 0, Stdout: `{"Model":"Intel Xeon","TotalCores":16,"Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetCpuInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	cpuResult, _ := facts["cpu"].(map[string]any)
+	if cpuResult["ret"] != true {
+		t.Fatalf("cpu = %+v", cpuResult)
+	}
+	entries, _ := cpuResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	cpus, _ := pair[1].([]any)
+	if len(cpus) != 1 {
+		t.Fatalf("cpus = %+v, want 1", cpus)
+	}
+	cpu, _ := cpus[0].(map[string]any)
+	if cpu["Model"] != "Intel Xeon" || cpu["TotalCores"] != float64(16) {
+		t.Fatalf("cpu = %+v", cpu)
+	}
+	if _, ok := cpu["Unrelated"]; ok {
+		t.Fatalf("cpu should not include unrelated properties: %+v", cpu)
+	}
+}
+
+func TestModuleRedfishInfoGetCpuInventoryMissingKeySoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetCpuInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	cpuResult, _ := facts["cpu"].(map[string]any)
+	if cpuResult["ret"] != false {
+		t.Fatalf("cpu = %+v, want ret:false (Processors key missing)", cpuResult)
+	}
+}
+
+func TestModuleRedfishInfoGetMemoryInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Memory":{"@odata.id":"/redfish/v1/Systems/1/Memory"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Memory; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Memory/DIMM1"},{"@odata.id":"/redfish/v1/Systems/1/Memory/DIMM2"}]}`}
+	dimm1Cmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Memory/DIMM1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[dimm1Cmd] = remoteexec.Result{RC: 0, Stdout: `{"Status":{"State":"Enabled"},"CapacityMiB":16384,"Unrelated":"x"}`}
+	dimm2Cmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Memory/DIMM2; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[dimm2Cmd] = remoteexec.Result{RC: 0, Stdout: `{"Status":{"State":"Absent"},"CapacityMiB":0}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetMemoryInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	memResult, _ := facts["memory"].(map[string]any)
+	if memResult["ret"] != true {
+		t.Fatalf("memory = %+v", memResult)
+	}
+	entries, _ := memResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	dimms, _ := pair[1].([]any)
+	// DIMM2 is Absent and should be filtered out entirely.
+	if len(dimms) != 1 {
+		t.Fatalf("dimms = %+v, want 1 (Absent DIMM filtered)", dimms)
+	}
+	dimm, _ := dimms[0].(map[string]any)
+	if dimm["CapacityMiB"] != float64(16384) {
+		t.Fatalf("dimm = %+v", dimm)
+	}
+	if _, ok := dimm["Unrelated"]; ok {
+		t.Fatalf("dimm should not include unrelated properties: %+v", dimm)
+	}
+}
+
+func TestModuleRedfishInfoGetBiosAttributes(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Bios":{"@odata.id":"/redfish/v1/Systems/1/Bios"}}`}
+	biosCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Bios; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[biosCmd] = remoteexec.Result{RC: 0, Stdout: `{"Attributes":{"BootMode":"Uefi","NumLock":"On"}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetBiosAttributes"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	biosResult, _ := facts["bios_attribute"].(map[string]any)
+	if biosResult["ret"] != true {
+		t.Fatalf("bios_attribute = %+v", biosResult)
+	}
+	entries, _ := biosResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	attrs, _ := pair[1].(map[string]any)
+	if attrs["BootMode"] != "Uefi" || attrs["NumLock"] != "On" {
+		t.Fatalf("attrs = %+v", attrs)
+	}
+}
+
+func TestModuleRedfishInfoGetBootOrder(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Boot":{"BootOrder":["Boot0001","Boot0002"],"BootOptions":{"@odata.id":"/redfish/v1/Systems/1/BootOptions"}}}`}
+	optListCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/BootOptions; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[optListCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/BootOptions/Boot0001"}]}`}
+	opt1Cmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/BootOptions/Boot0001; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[opt1Cmd] = remoteexec.Result{RC: 0, Stdout: `{"BootOptionReference":"Boot0001","DisplayName":"Hard Disk"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetBootOrder"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	bootOrderResult, _ := facts["boot_order"].(map[string]any)
+	if bootOrderResult["ret"] != true {
+		t.Fatalf("boot_order = %+v", bootOrderResult)
+	}
+	entries, _ := bootOrderResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	devices, _ := pair[1].([]any)
+	if len(devices) != 2 {
+		t.Fatalf("devices = %+v, want 2", devices)
+	}
+	dev1, _ := devices[0].(map[string]any)
+	if dev1["DisplayName"] != "Hard Disk" || dev1["BootOptionReference"] != "Boot0001" {
+		t.Fatalf("dev1 = %+v", dev1)
+	}
+	// Boot0002 has no matching BootOptions member — real Ansible falls
+	// back to a bare {"BootOptionReference": ref} entry.
+	dev2, _ := devices[1].(map[string]any)
+	if dev2["BootOptionReference"] != "Boot0002" {
+		t.Fatalf("dev2 = %+v, want bare BootOptionReference fallback", dev2)
+	}
+	if len(dev2) != 1 {
+		t.Fatalf("dev2 = %+v, want only BootOptionReference", dev2)
+	}
+}
+
+func TestModuleRedfishInfoGetBootOrderMissingKeySoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetBootOrder"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	bootOrderResult, _ := facts["boot_order"].(map[string]any)
+	if bootOrderResult["ret"] != false {
+		t.Fatalf("boot_order = %+v, want ret:false (Boot/BootOrder key missing)", bootOrderResult)
 	}
 }
