@@ -51,26 +51,42 @@ import (
 //     genuinely graceful "is it there at all" check), reproduced here
 //     the same way.
 //   - Systems: GetSystemInventory, GetBootOverride,
-//     GetPowerRestorePolicy, each reading the bare `Systems` resource
-//     (redfishtool's own --One default — the single-system case,
-//     same disclosed narrower-than-real-Ansible's-multi-system
-//     aggregation this whole sub-batch already relies on) and
-//     extracting exactly the properties real get_system_inventory/
-//     get_boot_override/get_power_restore_policy themselves read —
-//     confirmed field-by-field against their own source, not guessed.
-//     Wrapped in the same `[{"system_uri": uri}, {...}]` one-element
-//     list shape real Ansible's own aggregate_systems tuple produces
-//     (so a caller already written against real redfish_info's output
-//     shape doesn't need special-casing for the single-system case).
+//     GetPowerRestorePolicy, GetHealthReport, each reading the bare
+//     `Systems` resource (redfishtool's own --One default — the
+//     single-system case, same disclosed narrower-than-real-Ansible's-
+//     multi-system aggregation this whole sub-batch already relies on)
+//     and extracting exactly the properties real get_system_inventory/
+//     get_boot_override/get_power_restore_policy/
+//     get_system_health_report themselves read — confirmed field-by-
+//     field against their own source, not guessed. Every one of these
+//     four is real Ansible's own AGGREGATE-wrapped form
+//     (`get_multi_system_inventory`/`get_multi_boot_override`/
+//     `get_multi_power_restore_policy`/`get_multi_system_health_report`,
+//     confirmed from redfish_info.py's own dispatch table — NOT the
+//     bare non-aggregate function this port's own doc comments had
+//     originally assumed), so the real output shape is TWO-level:
+//     `{"ret": bool, "entries": [({"system_uri": uri}, {...})]}` — see
+//     redfishAggregateOne's own doc comment for the real bug this
+//     fixed in an earlier increment (the outer `{"ret":..,
+//     "entries":..}` wrapper was missing entirely). GetBootOverride
+//     additionally reproduces a real, easy-to-miss distinction: a
+//     missing "Boot" key or a missing "BootSourceOverrideEnabled" key
+//     are each their own real soft failure, but aggregate()'s own
+//     source discards the inner "msg" entirely — both surface as a
+//     bare `{"ret":false,"entries":[]}`, no message.
 //   - Chassis: GetChassisInventory, GetFanInventory, GetChassisPower,
-//     each reading the bare `Chassis` resource (same --One single-
-//     chassis narrowing as Systems above) — GetFanInventory/
-//     GetChassisPower each additionally discover and GET their own
-//     Thermal/Power sub-resource, reproducing real get_fan_inventory/
-//     get_chassis_power's exact soft-failure text ("No Fans present",
-//     "Power information not found.") when the expected link or
-//     property is missing, confirmed field-by-field from their own
-//     source, not guessed.
+//     GetHealthReport, each reading the bare `Chassis` resource (same
+//     --One single-chassis narrowing as Systems above) —
+//     GetFanInventory/GetChassisPower each additionally discover and
+//     GET their own Thermal/Power sub-resource, reproducing real
+//     get_fan_inventory/get_chassis_power's exact soft-failure text
+//     ("No Fans present", "Power information not found.") when the
+//     expected link or property is missing, confirmed field-by-field
+//     from their own source, not guessed. GetHealthReport is likewise
+//     the real aggregate-wrapped form (`get_multi_chassis_health_report`
+//     via `aggregate_chassis`, under its own "chassis_uri" key —
+//     confirmed from `aggregate_chassis`'s own source, not assumed to
+//     match Systems'/Manager's key names).
 //   - Accounts: ListUsers (list `AccountService Accounts`, GET each
 //     member, filter empty account slots exactly as real list_users
 //     does: UserName=="" and not Enabled) and GetAccountServiceConfig
@@ -99,7 +115,8 @@ import (
 //     way to recover the distinguishing HTTP status code, confirmed
 //     from `raw.py`'s own source. A real, disclosed gap, not
 //     approximated.
-//   - Manager: GetManagerInventory (bare Manager resource, 11-property
+//   - Manager: all 8 real commands, completing this category.
+//     GetManagerInventory (bare Manager resource, 11-property
 //     whitelist, wrapped in the same one-element aggregate-tuple shape
 //     as Systems/Chassis but under real Ansible's own "manager_uri"
 //     key), GetNetworkProtocols (Managers' own NetworkProtocol named
@@ -125,14 +142,31 @@ import (
 //     (find HostInterfaces, GET each member's 10-property whitelist,
 //     plus its own embedded ManagerEthernetInterface/
 //     HostEthernetInterfaces NIC lookups reusing get_nic's own
-//     whitelist — real get_hostinterfaces' two nested NIC lookups).
+//     whitelist — real get_hostinterfaces' two nested NIC lookups), and
+//     GetHealthReport — confirmed from its own source to have an EMPTY
+//     subsystems list (unlike Systems/Chassis), reducing to just the
+//     Manager's own top-level Status, wrapped under "manager_uri" via
+//     `aggregate_managers`.
 //
-// GetHealthReport (Manager) remains unwired — needs multi-subsystem
-// traversal not yet attempted — along with the remaining 12 Systems
-// commands (GetHealthReport, same reason) and 5 more Chassis commands
-// (GetChassisThermals, GetPsuInventory, GetHealthReport, and
-// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) — a later
-// increment of this same batch.
+// GetHealthReport (Systems/Chassis/Manager) shares ONE real
+// implementation (`get_health_report`, confirmed from its own source
+// to be the single shared function behind all three
+// `get_*_health_report` wrappers) — reproduced here as
+// redfishGetHealthReport plus its own two recursive helpers
+// (redfishGetHealthSubsystem/redfishGetHealthResource), handling all 3
+// real subsystem-name shapes ("Links.X", "X.Y", and a bare name) and
+// real Ansible's own "expanded" shortcut (a list item whose own
+// "@odata.id" contains "#" and carries more than one key — common for
+// PowerSupplies/Fans-style objects embedded directly in their parent
+// resource — skips a redundant GET and uses the embedded object as-is).
+//
+// 4 more Chassis commands (GetChassisThermals, GetPsuInventory, and
+// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) and 10 more
+// Systems commands (GetCpuInventory, GetMemoryInventory,
+// GetNicInventory, GetStorageControllerInventory, GetDiskInventory,
+// GetVolumeInventory, GetBiosAttributes, GetBootOrder, GetVirtualMedia,
+// GetBiosRegistries) remain unwired — a later increment of this same
+// batch.
 //
 // # A real bug a prior increment fixed
 //
@@ -214,13 +248,19 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 				case "GetSystemInventory":
 					facts["system"] = redfishAggregateOne("system_uri", systemURI, redfishSystemInventoryEntries(sysData))
 				case "GetBootOverride":
-					facts["boot_override"] = redfishAggregateOne("system_uri", systemURI, redfishBootOverrideEntries(sysData))
+					facts["boot_override"] = redfishGetBootOverride(systemURI, sysData)
 				case "GetPowerRestorePolicy":
 					facts["power_restore_policy"] = redfishAggregateOne("system_uri", systemURI, sysData["PowerRestorePolicy"])
+				case "GetHealthReport":
+					v, err := redfishGetSystemHealthReport(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["health_report"] = v
 				}
 
 			case "Chassis":
-				_, chassisData, res, err := redfishGetBareChassis(ctx, conn, baseuri, username, password)
+				chassisURI, chassisData, res, err := redfishGetBareChassis(ctx, conn, baseuri, username, password)
 				if err != nil {
 					return Result{}, err
 				}
@@ -242,6 +282,12 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 						return Result{}, err
 					}
 					facts["chassis_power"] = v
+				case "GetHealthReport":
+					v, err := redfishGetChassisHealthReport(ctx, conn, baseuri, username, password, chassisURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["health_report"] = v
 				}
 
 			case "Accounts":
@@ -350,6 +396,12 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 						return Result{}, err
 					}
 					facts["host_interfaces"] = v
+				case "GetHealthReport":
+					v, err := redfishGetManagerHealthReport(ctx, conn, baseuri, username, password, managerURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["health_report"] = v
 				}
 			}
 		}
@@ -359,12 +411,12 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 }
 
 var redfishInfoCategories = map[string][]string{
-	"Systems":  {"GetSystemInventory", "GetBootOverride", "GetPowerRestorePolicy"},
-	"Chassis":  {"GetChassisInventory", "GetFanInventory", "GetChassisPower"},
+	"Systems":  {"GetSystemInventory", "GetBootOverride", "GetPowerRestorePolicy", "GetHealthReport"},
+	"Chassis":  {"GetChassisInventory", "GetFanInventory", "GetChassisPower", "GetHealthReport"},
 	"Accounts": {"ListUsers", "GetAccountServiceConfig"},
 	"Sessions": {"GetSessions"},
 	"Update":   {"GetFirmwareInventory", "GetSoftwareInventory", "GetFirmwareUpdateCapabilities"},
-	"Manager":  {"GetManagerInventory", "GetNetworkProtocols", "GetServiceIdentification", "GetManagerNicInventory", "GetLogs", "GetVirtualMedia", "GetHostInterfaces"},
+	"Manager":  {"GetManagerInventory", "GetNetworkProtocols", "GetServiceIdentification", "GetManagerNicInventory", "GetLogs", "GetVirtualMedia", "GetHostInterfaces", "GetHealthReport"},
 	"Service":  {"CheckAvailability"},
 }
 
@@ -378,20 +430,31 @@ var redfishInfoDefaultCommand = map[string]string{
 	"Service":  "CheckAvailability",
 }
 
-// redfishAggregateOne wraps one resource's own entries in the same
-// `[{<key>: uri}, {...entries}]` shape real Ansible's own
-// aggregate_systems/aggregate_managers/get_multi_nic_inventory (each a
-// Python tuple, JSON-serialized as a 2-element array) produce for a
-// single-member list — see this file's own doc comment for why this
-// port only ever has one member. Key differs per real caller:
-// "system_uri" (aggregate_systems), "manager_uri"
-// (aggregate_managers/get_multi_manager_inventory), "resource_uri"
-// (get_multi_nic_inventory/get_multi_virtualmedia) — generalized from
-// the Systems-only redfishAggregateOneSystem the moment Manager's own
-// info commands needed the identical shape under different key names.
-func redfishAggregateOne(key, uri string, entries any) []any {
-	return []any{
-		[]any{map[string]any{key: uri}, entries},
+// redfishAggregateOne reproduces real Ansible's own shared `aggregate`
+// helper exactly: `{"ret": bool, "entries": [({<key>: uri}, entries),
+// ...]}` — a REAL bug in an earlier increment omitted this outer
+// "ret"/"entries" wrapper entirely, returning just the bare tuple
+// list. Confirmed by reading real redfish_info.py's own dispatch
+// table: GetSystemInventory/GetBootOverride/GetPowerRestorePolicy call
+// `get_multi_system_inventory`/`get_multi_boot_override`/
+// `get_multi_power_restore_policy` — every one of them
+// `aggregate_systems(...)`, not the bare non-aggregate function this
+// port's own doc comments had assumed — and likewise
+// GetManagerInventory/GetManagerNicInventory/GetVirtualMedia go
+// through `get_multi_manager_inventory`/`get_multi_nic_inventory`/
+// `get_multi_virtualmedia`, all aggregate-wrapped. Key differs per
+// real caller: "system_uri" (aggregate_systems), "manager_uri"
+// (aggregate_managers), "resource_uri" (get_multi_nic_inventory/
+// get_multi_virtualmedia's own inline aggregation, not aggregate_*) —
+// generalized from the Systems-only redfishAggregateOneSystem the
+// moment Manager's own info commands needed the identical shape under
+// different key names.
+func redfishAggregateOne(key, uri string, entries any) map[string]any {
+	return map[string]any{
+		"ret": true,
+		"entries": []any{
+			[]any{map[string]any{key: uri}, entries},
+		},
 	}
 }
 
@@ -414,22 +477,34 @@ func redfishSystemInventoryEntries(sysData map[string]any) map[string]any {
 	return entries
 }
 
-// redfishBootOverrideEntries reproduces real get_boot_override exactly:
-// nothing is returned (an empty map here — real Ansible instead fails
-// this one command's own "entries" with a ret:false, not attempted
-// verbatim here since it doesn't change this port's own Changed/Failed
-// contract either way) unless BootSourceOverrideEnabled is present and
-// not false, in which case the listed properties are copied when
-// present and non-nil.
-func redfishBootOverrideEntries(sysData map[string]any) map[string]any {
-	boot, _ := sysData["Boot"].(map[string]any)
-	entries := map[string]any{}
-	if boot == nil {
-		return entries
+// redfishGetBootOverride reproduces real get_boot_override AND real
+// get_multi_boot_override's own aggregate() wrapper exactly, including
+// a real, easy-to-miss distinction: a MISSING "Boot" key or a MISSING
+// "BootSourceOverrideEnabled" key are each their own real soft failure
+// ("Key Boot not found." / "No boot override is enabled.") — but
+// aggregate()'s own source only propagates the inner "ret" flag, never
+// the inner "msg", into its own `{"ret":.., "entries":[...]}` result
+// (it only appends to "entries" when the inner call's own dict HAS an
+// "entries" key at all) — so both real soft failures surface here as
+// bare `{"ret": false, "entries": []}`, no message, confirmed from
+// both functions' own source rather than assumed to preserve one.
+// An EXPLICIT `BootSourceOverrideEnabled: false` (as opposed to the
+// key being absent) is different again: real Ansible treats that as
+// a genuine SUCCESS with empty entries, not a failure — the boolean
+// value `false` is real Ansible's own `is not False` check failing,
+// which simply skips populating any properties, not an error path.
+func redfishGetBootOverride(systemURI string, sysData map[string]any) map[string]any {
+	boot, ok := sysData["Boot"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "entries": []any{}}
 	}
-	enabled, has := boot["BootSourceOverrideEnabled"]
-	if !has || enabled == false {
-		return entries
+	enabled, hasEnabled := boot["BootSourceOverrideEnabled"]
+	if !hasEnabled {
+		return map[string]any{"ret": false, "entries": []any{}}
+	}
+	overrides := map[string]any{}
+	if enabled == false {
+		return redfishAggregateOne("system_uri", systemURI, overrides)
 	}
 	properties := []string{
 		"BootSourceOverrideEnabled", "BootSourceOverrideTarget", "BootSourceOverrideMode",
@@ -437,10 +512,10 @@ func redfishBootOverrideEntries(sysData map[string]any) map[string]any {
 	}
 	for _, p := range properties {
 		if v, ok := boot[p]; ok && v != nil {
-			entries[p] = v
+			overrides[p] = v
 		}
 	}
-	return entries
+	return redfishAggregateOne("system_uri", systemURI, overrides)
 }
 
 // redfishCheckServiceAvailability implements real check_service_
@@ -994,7 +1069,7 @@ func redfishNicEntries(data map[string]any) map[string]any {
 // shape real get_multi_nic_inventory itself produces under its own
 // "resource_uri" key (confirmed from its own source — a different key
 // than GetManagerInventory's "manager_uri", not a typo).
-func redfishGetManagerNicInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) ([]any, error) {
+func redfishGetManagerNicInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) (map[string]any, error) {
 	link, ok := mgrData["EthernetInterfaces"].(map[string]any)
 	if !ok {
 		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
@@ -1105,7 +1180,7 @@ func redfishGetLogs(ctx context.Context, conn remoteexec.Connection, baseuri, us
 // 10 properties real get_virtualmedia itself reads, wrapped under real
 // Ansible's own "resource_uri" key (get_multi_virtualmedia's own tuple
 // shape — the same shape and key GetManagerNicInventory already uses).
-func redfishGetVirtualMedia(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) ([]any, error) {
+func redfishGetVirtualMedia(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) (map[string]any, error) {
 	link, ok := mgrData["VirtualMedia"].(map[string]any)
 	if !ok {
 		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
@@ -1230,4 +1305,278 @@ func redfishGetHostInterfaces(ctx context.Context, conn remoteexec.Connection, b
 		return map[string]any{"ret": false, "msg": "No HostInterface objects found"}, nil
 	}
 	return map[string]any{"ret": true, "entries": entries}, nil
+}
+
+// redfishToSingular reproduces real to_singular exactly: a name ending
+// in "ies" becomes "...y" (e.g. "PowerSupplies" -> "PowerSupply"), a
+// name ending in a plain "s" drops it (e.g. "Fans" -> "Fan",
+// "EthernetInterfaces" -> "EthernetInterface"), anything else is
+// returned unchanged (e.g. "Memory", "Storage" both already end in a
+// vowel, not "s").
+func redfishToSingular(name string) string {
+	if strings.HasSuffix(name, "ies") {
+		return name[:len(name)-3] + "y"
+	}
+	if strings.HasSuffix(name, "s") {
+		return name[:len(name)-1]
+	}
+	return name
+}
+
+// redfishGetHealthResource reproduces real get_health_resource: if
+// `expanded` is non-nil, use it directly instead of a fresh GET — real
+// Ansible's own shortcut for a list item whose own "@odata.id" already
+// contains "#" (a JSON-pointer-style fragment reference, common for
+// PowerSupplies/Fans-style objects embedded directly inside their
+// parent resource rather than addressable as their own separate
+// resource) AND carries more than just that one key — otherwise GET
+// uri fresh. If the resulting data is itself a collection (has
+// "Members"), walk each member and append one `{<singular>_uri:
+// memberURI, "Status": ...}` entry per member; otherwise append a
+// single such entry for the resource itself (using `uri` as its own
+// `_uri`, even when that uri is a fragment reference — matching real
+// Ansible's own behavior exactly, not adjusted for readability). A
+// transport error propagates; an HTTP-level failure (RC!=0) is
+// silently skipped, matching real Ansible's own `if r.get(ret): ...
+// else: return` (no failure surfaced at this level at all).
+func redfishGetHealthResource(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, subsystemKey, uri string, expanded, health map[string]any) error {
+	d := expanded
+	if d == nil {
+		r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &d, "raw", "GET", uri)
+		if err != nil {
+			return err
+		}
+		if r.RC != 0 {
+			return nil
+		}
+	}
+	singular := redfishToSingular(strings.ToLower(subsystemKey))
+	list, _ := health[subsystemKey].([]any)
+	if members, ok := d["Members"].([]any); ok {
+		for _, m := range members {
+			mm, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			u, _ := mm["@odata.id"].(string)
+			if u == "" {
+				continue
+			}
+			var p map[string]any
+			pr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &p, "raw", "GET", u)
+			if err != nil {
+				return err
+			}
+			if pr.RC != 0 {
+				continue
+			}
+			status, ok := p["Status"]
+			if !ok {
+				status = "Status not available"
+			}
+			list = append(list, map[string]any{singular + "_uri": u, "Status": status})
+		}
+	} else {
+		status, ok := d["Status"]
+		if !ok {
+			status = "Status not available"
+		}
+		list = append(list, map[string]any{singular + "_uri": uri, "Status": status})
+	}
+	health[subsystemKey] = list
+	return nil
+}
+
+// redfishGetHealthSubsystem reproduces real get_health_subsystem
+// exactly, including its own recursive "Members" fallback: if
+// `subsystem` isn't a direct key on `data` but `data` is itself a
+// collection (e.g. "NetworkInterfaces.NetworkPorts" — NetworkInterfaces
+// is a COLLECTION of individual NetworkInterface resources, so
+// "NetworkPorts" must instead be searched inside EACH member), walk
+// each member's own data and recurse.
+func redfishGetHealthSubsystem(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, subsystem string, data map[string]any, health map[string]any) error {
+	if sub, ok := data[subsystem]; ok {
+		switch v := sub.(type) {
+		case []any:
+			for _, item := range v {
+				m, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				uri, ok := m["@odata.id"].(string)
+				if !ok || uri == "" {
+					continue
+				}
+				var expanded map[string]any
+				if strings.Contains(uri, "#") && len(m) > 1 {
+					expanded = m
+				}
+				if err := redfishGetHealthResource(ctx, conn, baseuri, username, password, subsystem, uri, expanded, health); err != nil {
+					return err
+				}
+			}
+		case map[string]any:
+			if uri, ok := v["@odata.id"].(string); ok {
+				if err := redfishGetHealthResource(ctx, conn, baseuri, username, password, subsystem, uri, nil, health); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if members, ok := data["Members"].([]any); ok {
+		for _, m := range members {
+			mm, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			u, _ := mm["@odata.id"].(string)
+			if u == "" {
+				continue
+			}
+			var d map[string]any
+			r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &d, "raw", "GET", u)
+			if err != nil {
+				return err
+			}
+			if r.RC != 0 {
+				continue
+			}
+			if err := redfishGetHealthSubsystem(ctx, conn, baseuri, username, password, subsystem, d, health); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// redfishGetHealthReport reproduces real get_health_report exactly:
+// GET the top-level resource, record its own top-level Status under
+// `category`, then for each subsystem name in `subsystems` — handling
+// all 3 real naming shapes ("Links.X" reads from the resource's own
+// "Links" object; "X.Y" GETs the resource's own "X" sub-link first,
+// then searches for "Y" there; a bare name searches the top-level
+// resource's own data directly) — call redfishGetHealthSubsystem and
+// drop the subsystem's own key entirely if it ends up empty (real
+// Ansible's own `if not health[sub]: del health[sub]`).
+func redfishGetHealthReport(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, category, uri string, subsystems []string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	health := map[string]any{}
+	status, ok := data["Status"]
+	if !ok {
+		status = "Status not available"
+	}
+	health[category] = map[string]any{"Status": status}
+	for _, sub := range subsystems {
+		var d map[string]any
+		subKey := sub
+		switch {
+		case strings.HasPrefix(sub, "Links."):
+			subKey = strings.TrimPrefix(sub, "Links.")
+			links, _ := data["Links"].(map[string]any)
+			if links == nil {
+				links = map[string]any{}
+			}
+			d = links
+		case strings.Contains(sub, "."):
+			parts := strings.SplitN(sub, ".", 2)
+			p, s := parts[0], parts[1]
+			subKey = s
+			link, ok := data[p].(map[string]any)
+			if !ok {
+				continue
+			}
+			u, ok := link["@odata.id"].(string)
+			if !ok || u == "" {
+				continue
+			}
+			var sd map[string]any
+			r2, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &sd, "raw", "GET", u)
+			if err != nil {
+				return nil, err
+			}
+			if r2.RC != 0 {
+				continue
+			}
+			d = sd
+		default:
+			d = data
+		}
+		health[subKey] = []any{}
+		if err := redfishGetHealthSubsystem(ctx, conn, baseuri, username, password, subKey, d, health); err != nil {
+			return nil, err
+		}
+		if list, ok := health[subKey].([]any); ok && len(list) == 0 {
+			delete(health, subKey)
+		}
+	}
+	return map[string]any{"ret": true, "entries": health}, nil
+}
+
+// redfishWrapMultiHealthReport reproduces real get_multi_*_health_report's
+// own aggregate() wrapping around a SINGLE resource's
+// get_health_report result — confirmed from aggregate()'s own source:
+// it pops the inner "ret", and only appends `({key: uri}, inner
+// "entries")` to its own "entries" list when the inner result actually
+// HAS an "entries" key at all (a transport-level failure returns
+// early with no "entries" key, so aggregate() silently contributes
+// NOTHING for that member — same lossy "message discarded, just
+// ret:false + empty entries" pattern already confirmed for
+// GetBootOverride's own aggregate wrap).
+func redfishWrapMultiHealthReport(key, uri string, inner map[string]any) map[string]any {
+	entries, ok := inner["entries"]
+	if !ok {
+		return map[string]any{"ret": false, "entries": []any{}}
+	}
+	return redfishAggregateOne(key, uri, entries)
+}
+
+// redfishGetSystemHealthReport implements real get_system_health_report's
+// own exact 7-subsystem list, confirmed from its own source, wrapped
+// exactly as real get_multi_system_health_report's own
+// aggregate_systems call does.
+func redfishGetSystemHealthReport(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	subsystems := []string{
+		"Processors", "Memory", "SimpleStorage", "Storage", "EthernetInterfaces",
+		"NetworkInterfaces.NetworkPorts", "NetworkInterfaces.NetworkDeviceFunctions",
+	}
+	inner, err := redfishGetHealthReport(ctx, conn, baseuri, username, password, "System", systemURI, subsystems)
+	if err != nil {
+		return nil, err
+	}
+	return redfishWrapMultiHealthReport("system_uri", systemURI, inner), nil
+}
+
+// redfishGetChassisHealthReport implements real get_chassis_health_report's
+// own exact 3-subsystem list, confirmed from its own source, wrapped
+// exactly as real get_multi_chassis_health_report's own
+// aggregate_chassis call does — under "chassis_uri", confirmed from
+// aggregate_chassis's own source, not assumed to match Systems/Manager.
+func redfishGetChassisHealthReport(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, chassisURI string) (map[string]any, error) {
+	subsystems := []string{"Power.PowerSupplies", "Thermal.Fans", "Links.PCIeDevices"}
+	inner, err := redfishGetHealthReport(ctx, conn, baseuri, username, password, "Chassis", chassisURI, subsystems)
+	if err != nil {
+		return nil, err
+	}
+	return redfishWrapMultiHealthReport("chassis_uri", chassisURI, inner), nil
+}
+
+// redfishGetManagerHealthReport implements real
+// get_manager_health_report — confirmed from its own source to have
+// an EMPTY subsystems list (unlike Systems/Chassis), so this reduces
+// to just the Manager's own top-level Status — wrapped exactly as real
+// get_multi_manager_health_report's own aggregate_managers call does.
+func redfishGetManagerHealthReport(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string) (map[string]any, error) {
+	inner, err := redfishGetHealthReport(ctx, conn, baseuri, username, password, "Manager", managerURI, nil)
+	if err != nil {
+		return nil, err
+	}
+	return redfishWrapMultiHealthReport("manager_uri", managerURI, inner), nil
 }

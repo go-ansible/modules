@@ -65,7 +65,11 @@ func TestModuleRedfishInfoGetSystemInventory(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	system, _ := facts["system"].([]any)
+	systemResult, _ := facts["system"].(map[string]any)
+	if systemResult["ret"] != true {
+		t.Fatalf("system = %+v", systemResult)
+	}
+	system, _ := systemResult["entries"].([]any)
 	if len(system) != 1 {
 		t.Fatalf("system = %+v, want 1 entry", system)
 	}
@@ -119,7 +123,11 @@ func TestModuleRedfishInfoGetBootOverrideEnabled(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	bootOverride, _ := facts["boot_override"].([]any)
+	bootResult, _ := facts["boot_override"].(map[string]any)
+	if bootResult["ret"] != true {
+		t.Fatalf("boot_override = %+v", bootResult)
+	}
+	bootOverride, _ := bootResult["entries"].([]any)
 	pair, _ := bootOverride[0].([]any)
 	entries, _ := pair[1].(map[string]any)
 	if entries["BootSourceOverrideTarget"] != "Pxe" {
@@ -141,11 +149,64 @@ func TestModuleRedfishInfoGetBootOverrideDisabledIsEmpty(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	bootOverride, _ := facts["boot_override"].([]any)
+	bootResult, _ := facts["boot_override"].(map[string]any)
+	if bootResult["ret"] != true {
+		t.Fatalf("boot_override = %+v, want ret:true (explicit false is a real success with empty entries, not a failure)", bootResult)
+	}
+	bootOverride, _ := bootResult["entries"].([]any)
 	pair, _ := bootOverride[0].([]any)
 	entries, _ := pair[1].(map[string]any)
 	if len(entries) != 0 {
 		t.Fatalf("entries = %+v, want empty (override disabled)", entries)
+	}
+}
+
+func TestModuleRedfishInfoGetBootOverrideNoBootKeySoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	cmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[cmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetBootOverride"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok (a per-command problem is a soft embed, not a module failure)", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	bootResult, _ := facts["boot_override"].(map[string]any)
+	// Real get_multi_boot_override's own aggregate() wrapper discards the
+	// inner get_boot_override's own "msg" entirely (it only reads "ret"
+	// and "entries") — so a missing "Boot" key or a missing
+	// "BootSourceOverrideEnabled" key both surface here as a bare
+	// ret:false with an empty entries list, no message at all.
+	if bootResult["ret"] != false {
+		t.Fatalf("boot_override = %+v, want ret:false", bootResult)
+	}
+	entries, _ := bootResult["entries"].([]any)
+	if len(entries) != 0 {
+		t.Fatalf("boot_override = %+v, want empty entries (real aggregate() drops a failed member entirely)", bootResult)
+	}
+}
+
+func TestModuleRedfishInfoGetBootOverrideNoEnabledKeySoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	cmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[cmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Boot":{"BootSourceOverrideTarget":"Pxe"}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetBootOverride"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok (a per-command problem is a soft embed, not a module failure)", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	bootResult, _ := facts["boot_override"].(map[string]any)
+	if bootResult["ret"] != false {
+		t.Fatalf("boot_override = %+v, want ret:false (BootSourceOverrideEnabled missing entirely)", bootResult)
 	}
 }
 
@@ -163,7 +224,11 @@ func TestModuleRedfishInfoGetPowerRestorePolicy(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	prp, _ := facts["power_restore_policy"].([]any)
+	prpResult, _ := facts["power_restore_policy"].(map[string]any)
+	if prpResult["ret"] != true {
+		t.Fatalf("power_restore_policy = %+v", prpResult)
+	}
+	prp, _ := prpResult["entries"].([]any)
 	pair, _ := prp[0].([]any)
 	if pair[1] != "AlwaysOn" {
 		t.Fatalf("power_restore_policy = %+v", pair)
@@ -697,7 +762,11 @@ func TestModuleRedfishInfoGetManagerInventory(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	manager, _ := facts["manager"].([]any)
+	managerResult, _ := facts["manager"].(map[string]any)
+	if managerResult["ret"] != true {
+		t.Fatalf("manager = %+v", managerResult)
+	}
+	manager, _ := managerResult["entries"].([]any)
 	if len(manager) != 1 {
 		t.Fatalf("manager = %+v, want 1 entry", manager)
 	}
@@ -807,7 +876,11 @@ func TestModuleRedfishInfoGetManagerNicInventory(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	nics, _ := facts["manager_nics"].([]any)
+	nicsResult, _ := facts["manager_nics"].(map[string]any)
+	if nicsResult["ret"] != true {
+		t.Fatalf("manager_nics = %+v", nicsResult)
+	}
+	nics, _ := nicsResult["entries"].([]any)
 	if len(nics) != 1 {
 		t.Fatalf("nics = %+v, want 1 entry", nics)
 	}
@@ -933,7 +1006,11 @@ func TestModuleRedfishInfoGetVirtualMedia(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	vm, _ := facts["virtual_media"].([]any)
+	vmResult, _ := facts["virtual_media"].(map[string]any)
+	if vmResult["ret"] != true {
+		t.Fatalf("virtual_media = %+v", vmResult)
+	}
+	vm, _ := vmResult["entries"].([]any)
 	if len(vm) != 1 {
 		t.Fatalf("vm = %+v, want 1 entry", vm)
 	}
@@ -969,7 +1046,8 @@ func TestModuleRedfishInfoGetVirtualMediaNoLinkIsEmpty(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
-	vm, _ := facts["virtual_media"].([]any)
+	vmResult, _ := facts["virtual_media"].(map[string]any)
+	vm, _ := vmResult["entries"].([]any)
 	pair, _ := vm[0].([]any)
 	entries, _ := pair[1].([]any)
 	if len(entries) != 0 {
@@ -1035,5 +1113,177 @@ func TestModuleRedfishInfoGetHostInterfacesNoneFoundSoftFails(t *testing.T) {
 	hi, _ := facts["host_interfaces"].(map[string]any)
 	if hi["ret"] != false || hi["msg"] != "No HostInterface objects found" {
 		t.Fatalf("hi = %+v", hi)
+	}
+}
+
+func TestModuleRedfishInfoGetSystemHealthReport(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	sysJSON := `{"@odata.id":"/redfish/v1/Systems/1/","Status":{"Health":"OK"},"Processors":{"@odata.id":"/redfish/v1/Systems/1/Processors"}}`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: sysJSON}
+	// redfishGetHealthReport does its own independent raw GET of the
+	// system's own URI (matching real get_health_report's own
+	// independent get_request — it does not reuse the category-level
+	// bare-fetch's own data), so the same resource needs a second mock
+	// under its "raw GET <uri>" form.
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: sysJSON}
+	procCollCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Processors; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[procCollCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Processors/CPU1"}]}`}
+	cpuCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Processors/CPU1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[cpuCmd] = remoteexec.Result{RC: 0, Stdout: `{"Status":{"Health":"OK"}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetHealthReport"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	hrResult, _ := facts["health_report"].(map[string]any)
+	if hrResult["ret"] != true {
+		t.Fatalf("health_report = %+v", hrResult)
+	}
+	entries, _ := hrResult["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1", entries)
+	}
+	pair, _ := entries[0].([]any)
+	uriMap, _ := pair[0].(map[string]any)
+	if uriMap["system_uri"] != "/redfish/v1/Systems/1/" {
+		t.Fatalf("uriMap = %+v", uriMap)
+	}
+	health, _ := pair[1].(map[string]any)
+	system, _ := health["System"].(map[string]any)
+	status, _ := system["Status"].(map[string]any)
+	if status["Health"] != "OK" {
+		t.Fatalf("System = %+v", system)
+	}
+	processors, _ := health["Processors"].([]any)
+	if len(processors) != 1 {
+		t.Fatalf("Processors = %+v, want 1", processors)
+	}
+	cpu, _ := processors[0].(map[string]any)
+	if cpu["processor_uri"] != "/redfish/v1/Systems/1/Processors/CPU1" {
+		t.Fatalf("cpu = %+v", cpu)
+	}
+	cpuStatus, _ := cpu["Status"].(map[string]any)
+	if cpuStatus["Health"] != "OK" {
+		t.Fatalf("cpu = %+v", cpu)
+	}
+	// Real get_health_report deletes any subsystem key that ends up empty
+	// (Memory/SimpleStorage/Storage/EthernetInterfaces/NetworkInterfaces.*
+	// are all absent from this fixture) — none of those keys should
+	// survive into the final health dict.
+	for _, absent := range []string{"Memory", "SimpleStorage", "Storage", "EthernetInterfaces", "NetworkPorts", "NetworkDeviceFunctions"} {
+		if _, ok := health[absent]; ok {
+			t.Fatalf("health should not include empty subsystem %q: %+v", absent, health)
+		}
+	}
+}
+
+func TestModuleRedfishInfoGetChassisHealthReport(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	chassisJSON := `{"@odata.id":"/redfish/v1/Chassis/1/","Status":{"Health":"OK"},"Power":{"@odata.id":"/redfish/v1/Chassis/1/Power"},"Thermal":{"@odata.id":"/redfish/v1/Chassis/1/Thermal"},"Links":{"PCIeDevices":[{"@odata.id":"/redfish/v1/Chassis/1/PCIeDevices/1"}]}}`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: chassisJSON}
+	chassisRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisRawCmd] = remoteexec.Result{RC: 0, Stdout: chassisJSON}
+	powerCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/Power; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[powerCmd] = remoteexec.Result{RC: 0, Stdout: `{"PowerSupplies":[{"@odata.id":"/redfish/v1/Chassis/1/Power#/PowerSupplies/0","Status":{"Health":"OK"},"Name":"PS1"}]}`}
+	thermalCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/Thermal; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[thermalCmd] = remoteexec.Result{RC: 0, Stdout: `{"Fans":[{"@odata.id":"/redfish/v1/Chassis/1/Thermal#/Fans/0","Status":{"Health":"OK"},"Name":"Fan1"}]}`}
+	pcieCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/PCIeDevices/1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[pcieCmd] = remoteexec.Result{RC: 0, Stdout: `{"Status":{"Health":"OK"}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetHealthReport"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	hrResult, _ := facts["health_report"].(map[string]any)
+	if hrResult["ret"] != true {
+		t.Fatalf("health_report = %+v", hrResult)
+	}
+	entries, _ := hrResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	uriMap, _ := pair[0].(map[string]any)
+	if uriMap["chassis_uri"] != "/redfish/v1/Chassis/1/" {
+		t.Fatalf("uriMap = %+v", uriMap)
+	}
+	health, _ := pair[1].(map[string]any)
+	// PowerSupplies/Fans both use real Ansible's own "expanded" shortcut
+	// (their own @odata.id contains "#" and the embedded object carries
+	// more than just that one key) — no separate GET of the PowerSupply/
+	// Fan object itself should have been needed; only the two named
+	// mocked commands (Power, Thermal) plus the PCIeDevices GET (a plain
+	// link, no "#", needing a real GET) should have been issued.
+	powerSupplies, _ := health["PowerSupplies"].([]any)
+	if len(powerSupplies) != 1 {
+		t.Fatalf("PowerSupplies = %+v, want 1", powerSupplies)
+	}
+	ps, _ := powerSupplies[0].(map[string]any)
+	if ps["powersupply_uri"] != "/redfish/v1/Chassis/1/Power#/PowerSupplies/0" {
+		t.Fatalf("ps = %+v", ps)
+	}
+	fans, _ := health["Fans"].([]any)
+	if len(fans) != 1 {
+		t.Fatalf("Fans = %+v, want 1", fans)
+	}
+	fan, _ := fans[0].(map[string]any)
+	if fan["fan_uri"] != "/redfish/v1/Chassis/1/Thermal#/Fans/0" {
+		t.Fatalf("fan = %+v", fan)
+	}
+	pcieDevices, _ := health["PCIeDevices"].([]any)
+	if len(pcieDevices) != 1 {
+		t.Fatalf("PCIeDevices = %+v, want 1", pcieDevices)
+	}
+	pcie, _ := pcieDevices[0].(map[string]any)
+	if pcie["pciedevice_uri"] != "/redfish/v1/Chassis/1/PCIeDevices/1" {
+		t.Fatalf("pcie = %+v", pcie)
+	}
+}
+
+func TestModuleRedfishInfoGetManagerHealthReport(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	mgrJSON := `{"@odata.id":"/redfish/v1/Managers/1/","Status":{"Health":"OK"}}`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
+	mgrRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrRawCmd] = remoteexec.Result{RC: 0, Stdout: mgrJSON}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetHealthReport"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	hrResult, _ := facts["health_report"].(map[string]any)
+	if hrResult["ret"] != true {
+		t.Fatalf("health_report = %+v", hrResult)
+	}
+	entries, _ := hrResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	uriMap, _ := pair[0].(map[string]any)
+	if uriMap["manager_uri"] != "/redfish/v1/Managers/1/" {
+		t.Fatalf("uriMap = %+v", uriMap)
+	}
+	health, _ := pair[1].(map[string]any)
+	manager, _ := health["Manager"].(map[string]any)
+	status, _ := manager["Status"].(map[string]any)
+	if status["Health"] != "OK" {
+		t.Fatalf("Manager = %+v, want just the top-level Status (real get_manager_health_report has an empty subsystems list)", manager)
+	}
+	if len(health) != 1 {
+		t.Fatalf("health = %+v, want only the Manager key", health)
 	}
 }
