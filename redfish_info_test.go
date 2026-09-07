@@ -843,3 +843,197 @@ func TestModuleRedfishInfoManagerResourceMissingHardFails(t *testing.T) {
 		t.Fatalf("res = %+v, want Failed (no Managers resource at all is a category-level hard fail)", res)
 	}
 }
+
+func TestModuleRedfishInfoGetLogs(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","LogServices":{"@odata.id":"/redfish/v1/Managers/1/LogServices"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com Managers Logs list; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/LogServices/Log1"}]}`}
+	svcCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/LogServices/Log1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[svcCmd] = remoteexec.Result{RC: 0, Stdout: `{"Entries":{"@odata.id":"/redfish/v1/Managers/1/LogServices/Log1/Entries"}}`}
+	entriesCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/LogServices/Log1/Entries; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[entriesCmd] = remoteexec.Result{RC: 0, Stdout: `{"Description":"System Event Log","Members":[{"Severity":"Warning","Created":"2026-01-01T00:00:00Z","Message":"Fan failure","Unrelated":"x"}]}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetLogs"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	log, _ := facts["log"].(map[string]any)
+	if log["ret"] != true {
+		t.Fatalf("log = %+v", log)
+	}
+	entries, _ := log["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1", entries)
+	}
+	logGroup, _ := entries[0].(map[string]any)
+	if logGroup["Description"] != "System Event Log" {
+		t.Fatalf("logGroup = %+v", logGroup)
+	}
+	// Real get_logs derives the log name from the ENTRIES URI's own last
+	// path segment, not the LogService's own Id — confirmed from its
+	// own source. A real Redfish Entries collection's own @odata.id
+	// conventionally ends in "/Entries" (as this fixture's does), so
+	// the key really is "Entries", not "Log1" — reproduced verbatim,
+	// not "fixed".
+	logEntries, _ := logGroup["Entries"].([]any)
+	if len(logEntries) != 1 {
+		t.Fatalf("Entries = %+v, want 1", logEntries)
+	}
+	entry, _ := logEntries[0].(map[string]any)
+	if entry["Severity"] != "Warning" || entry["Message"] != "Fan failure" {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if _, ok := entry["Unrelated"]; ok {
+		t.Fatalf("entry should not include unrelated properties: %+v", entry)
+	}
+}
+
+func TestModuleRedfishInfoGetLogsNoLogServicesSoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetLogs"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok (a per-command problem is a soft embed, not a module failure)", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	log, _ := facts["log"].(map[string]any)
+	if log["ret"] != false || log["msg"] != "LogServices resource not found" {
+		t.Fatalf("log = %+v", log)
+	}
+}
+
+func TestModuleRedfishInfoGetVirtualMedia(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","VirtualMedia":{"@odata.id":"/redfish/v1/Managers/1/VirtualMedia"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/VirtualMedia; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/VirtualMedia/CD1"}]}`}
+	memberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/VirtualMedia/CD1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[memberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"CD1","Name":"Virtual CD","MediaTypes":["CD","DVD"],"WriteProtected":true,"Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetVirtualMedia"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	vm, _ := facts["virtual_media"].([]any)
+	if len(vm) != 1 {
+		t.Fatalf("vm = %+v, want 1 entry", vm)
+	}
+	pair, _ := vm[0].([]any)
+	uriMap, _ := pair[0].(map[string]any)
+	if uriMap["resource_uri"] != "/redfish/v1/Managers/1/" {
+		t.Fatalf("uriMap = %+v", uriMap)
+	}
+	entries, _ := pair[1].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1", entries)
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["Name"] != "Virtual CD" || entry["WriteProtected"] != true {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if _, ok := entry["Unrelated"]; ok {
+		t.Fatalf("entry should not include unrelated properties: %+v", entry)
+	}
+}
+
+func TestModuleRedfishInfoGetVirtualMediaNoLinkIsEmpty(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetVirtualMedia"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	vm, _ := facts["virtual_media"].([]any)
+	pair, _ := vm[0].([]any)
+	entries, _ := pair[1].([]any)
+	if len(entries) != 0 {
+		t.Fatalf("entries = %+v, want empty", entries)
+	}
+}
+
+func TestModuleRedfishInfoGetHostInterfaces(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/","HostInterfaces":{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/HostInterfaces; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Managers/1/HostInterfaces/1"}]}`}
+	memberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/HostInterfaces/1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[memberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"1","HostInterfaceType":"NetworkHostInterface","InterfaceEnabled":true,"ManagerEthernetInterface":{"@odata.id":"/redfish/v1/Managers/1/EthernetInterfaces/usb0"},"Unrelated":"x"}`}
+	nicCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Managers/1/EthernetInterfaces/usb0; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[nicCmd] = remoteexec.Result{RC: 0, Stdout: `{"Name":"Manager USB NIC","MACAddress":"11:22:33:44:55:66"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetHostInterfaces"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	hi, _ := facts["host_interfaces"].(map[string]any)
+	if hi["ret"] != true {
+		t.Fatalf("hi = %+v", hi)
+	}
+	entries, _ := hi["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1", entries)
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["HostInterfaceType"] != "NetworkHostInterface" {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if _, ok := entry["Unrelated"]; ok {
+		t.Fatalf("entry should not include unrelated properties: %+v", entry)
+	}
+	mei, _ := entry["ManagerEthernetInterface"].(map[string]any)
+	if mei["MACAddress"] != "11:22:33:44:55:66" {
+		t.Fatalf("ManagerEthernetInterface = %+v", mei)
+	}
+}
+
+func TestModuleRedfishInfoGetHostInterfacesNoneFoundSoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	mgrCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Managers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[mgrCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Managers/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Manager"}, "command": []any{"GetHostInterfaces"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok (a per-command problem is a soft embed, not a module failure)", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	hi, _ := facts["host_interfaces"].(map[string]any)
+	if hi["ret"] != false || hi["msg"] != "No HostInterface objects found" {
+		t.Fatalf("hi = %+v", hi)
+	}
+}
