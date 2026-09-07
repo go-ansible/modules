@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"strings"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -113,15 +114,25 @@ import (
 //     in this file), and GetManagerNicInventory (list the Manager's own
 //     EthernetInterfaces, GET each member, the same 14-property
 //     `get_nic` whitelist real get_hostinterfaces also reuses,
-//     wrapped under real Ansible's own "resource_uri" key).
+//     wrapped under real Ansible's own "resource_uri" key). GetLogs
+//     (find LogServices, list its members via the same `Managers Logs
+//     list` idiom redfish_command.go's own ClearLogs uses, GET each to
+//     find ITS OWN Entries sub-link, then GET each Entries collection
+//     for its embedded LogEntry objects directly — no further per-entry
+//     GET needed). GetVirtualMedia (find the Manager's own VirtualMedia
+//     collection, GET each member, 10-property whitelist, wrapped under
+//     "resource_uri" like GetManagerNicInventory). GetHostInterfaces
+//     (find HostInterfaces, GET each member's 10-property whitelist,
+//     plus its own embedded ManagerEthernetInterface/
+//     HostEthernetInterfaces NIC lookups reusing get_nic's own
+//     whitelist — real get_hostinterfaces' two nested NIC lookups).
 //
-// GetLogs, GetVirtualMedia, GetHostInterfaces, and GetHealthReport
-// (Manager) remain unwired — each needs a deeper multi-level resource
-// walk than this increment attempted — along with the remaining 12
-// Systems commands (GetHealthReport needs multi-subsystem traversal)
-// and 5 more Chassis commands (GetChassisThermals, GetPsuInventory,
-// GetHealthReport, and HPE-specific GetHPEThermalConfig/
-// GetHPEFanPercentMin) — a later increment of this same batch.
+// GetHealthReport (Manager) remains unwired — needs multi-subsystem
+// traversal not yet attempted — along with the remaining 12 Systems
+// commands (GetHealthReport, same reason) and 5 more Chassis commands
+// (GetChassisThermals, GetPsuInventory, GetHealthReport, and
+// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) — a later
+// increment of this same batch.
 //
 // # A real bug a prior increment fixed
 //
@@ -321,6 +332,24 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 						return Result{}, err
 					}
 					facts["manager_nics"] = v
+				case "GetLogs":
+					v, err := redfishGetLogs(ctx, conn, baseuri, username, password, mgrData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["log"] = v
+				case "GetVirtualMedia":
+					v, err := redfishGetVirtualMedia(ctx, conn, baseuri, username, password, managerURI, mgrData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["virtual_media"] = v
+				case "GetHostInterfaces":
+					v, err := redfishGetHostInterfaces(ctx, conn, baseuri, username, password, mgrData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["host_interfaces"] = v
 				}
 			}
 		}
@@ -335,7 +364,7 @@ var redfishInfoCategories = map[string][]string{
 	"Accounts": {"ListUsers", "GetAccountServiceConfig"},
 	"Sessions": {"GetSessions"},
 	"Update":   {"GetFirmwareInventory", "GetSoftwareInventory", "GetFirmwareUpdateCapabilities"},
-	"Manager":  {"GetManagerInventory", "GetNetworkProtocols", "GetServiceIdentification", "GetManagerNicInventory"},
+	"Manager":  {"GetManagerInventory", "GetNetworkProtocols", "GetServiceIdentification", "GetManagerNicInventory", "GetLogs", "GetVirtualMedia", "GetHostInterfaces"},
 	"Service":  {"CheckAvailability"},
 }
 
@@ -991,4 +1020,214 @@ func redfishGetManagerNicInventory(ctx context.Context, conn remoteexec.Connecti
 		entries = append(entries, redfishNicEntries(data))
 	}
 	return redfishAggregateOne("resource_uri", managerURI, entries), nil
+}
+
+// redfishGetLogs reproduces real get_logs exactly: find the Manager's
+// own "LogServices" link, list its members (`Managers Logs list`, the
+// same idiom redfish_command.go's own ClearLogs already uses), GET
+// each member to find ITS OWN "Entries" sub-link (skipped silently if
+// absent — real Ansible's own behavior, not a failure), then GET each
+// Entries collection and copy the 7 properties real get_logs itself
+// reads from each embedded LogEntry directly (no further per-entry GET
+// needed — the Entries collection's own Members already carry the full
+// LogEntry objects). The output log name is the Entries URI's own last
+// path segment, confirmed from real get_logs' own `rstrip("/").
+// split("/")[-1]`.
+func redfishGetLogs(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, mgrData map[string]any) (map[string]any, error) {
+	if _, ok := mgrData["LogServices"]; !ok {
+		return map[string]any{"ret": false, "msg": "LogServices resource not found"}, nil
+	}
+	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "Managers", "Logs", "list")
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	properties := []string{"Severity", "Created", "EntryType", "OemRecordFormat", "Message", "MessageId", "MessageArgs"}
+	logs := []any{}
+	for _, logSvcURI := range members {
+		var logSvc map[string]any
+		lr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &logSvc, "raw", "GET", logSvcURI)
+		if err != nil {
+			return nil, err
+		}
+		if lr.RC != 0 {
+			return map[string]any{"ret": false, "msg": redfishtoolErrMsg(lr)}, nil
+		}
+		entriesLink, ok := logSvc["Entries"].(map[string]any)
+		if !ok {
+			continue
+		}
+		entriesURI, _ := entriesLink["@odata.id"].(string)
+		var entriesData map[string]any
+		er, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &entriesData, "raw", "GET", entriesURI)
+		if err != nil {
+			return nil, err
+		}
+		if er.RC != 0 {
+			return map[string]any{"ret": false, "msg": redfishtoolErrMsg(er)}, nil
+		}
+		description, ok := entriesData["Description"].(string)
+		if !ok {
+			description = "Collection of log entries"
+		}
+		logEntries := []any{}
+		if rawMembers, ok := entriesData["Members"].([]any); ok {
+			for _, m := range rawMembers {
+				logEntry, ok := m.(map[string]any)
+				if !ok {
+					continue
+				}
+				entry := map[string]any{}
+				for _, p := range properties {
+					if v, ok := logEntry[p]; ok {
+						entry[p] = v
+					}
+				}
+				if len(entry) > 0 {
+					logEntries = append(logEntries, entry)
+				}
+			}
+		}
+		logName := strings.TrimRight(entriesURI, "/")
+		if idx := strings.LastIndex(logName, "/"); idx >= 0 {
+			logName = logName[idx+1:]
+		}
+		logs = append(logs, map[string]any{"Description": description, logName: logEntries})
+	}
+	return map[string]any{"ret": true, "entries": logs}, nil
+}
+
+// redfishGetVirtualMedia reproduces real get_virtualmedia/
+// get_multi_virtualmedia for the Manager's own VirtualMedia collection:
+// find the "VirtualMedia" link, list its members, GET each, copy the
+// 10 properties real get_virtualmedia itself reads, wrapped under real
+// Ansible's own "resource_uri" key (get_multi_virtualmedia's own tuple
+// shape — the same shape and key GetManagerNicInventory already uses).
+func redfishGetVirtualMedia(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) ([]any, error) {
+	link, ok := mgrData["VirtualMedia"].(map[string]any)
+	if !ok {
+		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
+	}
+	properties := []string{
+		"Description", "ConnectedVia", "Id", "MediaTypes", "Image",
+		"ImageName", "Name", "WriteProtected", "TransferMethod", "TransferProtocolType",
+	}
+	entries := []any{}
+	for _, memberURI := range members {
+		var data map[string]any
+		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", memberURI)
+		if err != nil {
+			return nil, err
+		}
+		if mr.RC != 0 {
+			continue
+		}
+		entry := map[string]any{}
+		for _, p := range properties {
+			if v, ok := data[p]; ok {
+				entry[p] = v
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return redfishAggregateOne("resource_uri", managerURI, entries), nil
+}
+
+// redfishGetHostInterfaces reproduces real get_hostinterfaces for this
+// port's single-manager scope: find the Manager's own "HostInterfaces"
+// link (absent means no HostInterface objects at all — a real, single
+// soft-failure message confirmed from source, not per-manager since
+// this port only ever has one), GET the collection, GET each member,
+// copy the 10 properties real get_hostinterfaces itself reads (only
+// when the value is non-nil, confirmed from its own extra `is not
+// None` check — a real, easy-to-miss detail beyond a plain "in data"
+// test), then — matching real get_hostinterfaces' own two embedded NIC
+// lookups, both reusing get_nic's exact whitelist
+// (redfishNicEntries) — attach "ManagerEthernetInterface" (a single
+// link) and "HostEthernetInterfaces" (a collection of links) when
+// present.
+func redfishGetHostInterfaces(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, mgrData map[string]any) (map[string]any, error) {
+	link, ok := mgrData["HostInterfaces"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": "No HostInterface objects found"}, nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 || len(members) == 0 {
+		return map[string]any{"ret": false, "msg": "No HostInterface objects found"}, nil
+	}
+	properties := []string{
+		"Id", "Name", "Description", "HostInterfaceType", "Status", "InterfaceEnabled",
+		"ExternallyAccessible", "AuthenticationModes", "AuthNoneRoleId", "CredentialBootstrapping",
+	}
+	entries := []any{}
+	for _, memberURI := range members {
+		var data map[string]any
+		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", memberURI)
+		if err != nil {
+			return nil, err
+		}
+		if mr.RC != 0 {
+			continue
+		}
+		entry := map[string]any{}
+		for _, p := range properties {
+			if v, ok := data[p]; ok && v != nil {
+				entry[p] = v
+			}
+		}
+		if mei, ok := data["ManagerEthernetInterface"].(map[string]any); ok {
+			if meiURI, ok := mei["@odata.id"].(string); ok {
+				var nicData map[string]any
+				nr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &nicData, "raw", "GET", meiURI)
+				if err != nil {
+					return nil, err
+				}
+				if nr.RC == 0 {
+					entry["ManagerEthernetInterface"] = redfishNicEntries(nicData)
+				}
+			}
+		}
+		if hei, ok := data["HostEthernetInterfaces"].(map[string]any); ok {
+			if heiURI, ok := hei["@odata.id"].(string); ok {
+				nicURIs, hr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", heiURI)
+				if err != nil {
+					return nil, err
+				}
+				if hr.RC == 0 {
+					hostNics := []any{}
+					for _, nicURI := range nicURIs {
+						var nicData map[string]any
+						nr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &nicData, "raw", "GET", nicURI)
+						if err != nil {
+							return nil, err
+						}
+						if nr.RC != 0 {
+							continue
+						}
+						hostNics = append(hostNics, redfishNicEntries(nicData))
+					}
+					entry["HostEthernetInterfaces"] = hostNics
+				}
+			}
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return map[string]any{"ret": false, "msg": "No HostInterface objects found"}, nil
+	}
+	return map[string]any{"ret": true, "entries": entries}, nil
 }
