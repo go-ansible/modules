@@ -79,16 +79,51 @@ import (
 //     member) — this category's only command, so a missing
 //     SessionService/Sessions resource is this port's own category-
 //     level hard fail rather than a soft per-command embed.
+//   - Update: GetFirmwareInventory/GetSoftwareInventory (list the
+//     UpdateService's own FirmwareInventory/SoftwareInventory
+//     collection, GET each member, 9-property whitelist confirmed from
+//     `_software_inventory`'s own source — single-page only, a real
+//     disclosed narrowing: real Ansible follows `Members@odata.
+//     nextLink` pagination, this port does not) and
+//     GetFirmwareUpdateCapabilities (the UpdateService resource's own
+//     "Actions" dict, title-keyed, each action's
+//     TransferProtocol@Redfish.AllowableValues — reproducing real
+//     get_firmware_update_capabilities' exact two soft-failure
+//     messages, "Key Actions not found."/"Actions list is empty.").
+//     GetUpdateStatus is NOT wired: real get_update_status interprets
+//     the raw HTTP status code (200/202/204/4xx) of a GET on an
+//     arbitrary task/job handle to build its own status enum
+//     (`_operation_results`) — redfishtool's own `raw` subcommand
+//     prints only the JSON body in its default output mode, with no
+//     way to recover the distinguishing HTTP status code, confirmed
+//     from `raw.py`'s own source. A real, disclosed gap, not
+//     approximated.
+//   - Manager: GetManagerInventory (bare Manager resource, 11-property
+//     whitelist, wrapped in the same one-element aggregate-tuple shape
+//     as Systems/Chassis but under real Ansible's own "manager_uri"
+//     key), GetNetworkProtocols (Managers' own NetworkProtocol named
+//     subcommand, filtered to the same 14 known protocol-service names
+//     `redfishNormalizeNetworkProtocols` in redfish_config.go already
+//     validates against — reused, not redefined), GetServiceIdentification
+//     (a real, disclosed EXCEPTION to this whole module's own soft-
+//     fail convention: real get_service_identification calls
+//     `module.fail_json` directly on a missing ServiceIdentification
+//     property, confirmed from its own source — reproduced as a hard
+//     Result{Failed:true}, not a soft embed, unlike every other command
+//     in this file), and GetManagerNicInventory (list the Manager's own
+//     EthernetInterfaces, GET each member, the same 14-property
+//     `get_nic` whitelist real get_hostinterfaces also reuses,
+//     wrapped under real Ansible's own "resource_uri" key).
 //
-// Update and Manager are still declared with empty command lists — not
-// wired yet — along with the remaining 12 Systems commands
-// (GetHealthReport and friends need multi-subsystem traversal not yet
-// attempted) and 5 more Chassis commands (GetChassisThermals,
-// GetPsuInventory, GetHealthReport, and HPE-specific
-// GetHPEThermalConfig/GetHPEFanPercentMin) — a later increment of this
-// same batch.
+// GetLogs, GetVirtualMedia, GetHostInterfaces, and GetHealthReport
+// (Manager) remain unwired — each needs a deeper multi-level resource
+// walk than this increment attempted — along with the remaining 12
+// Systems commands (GetHealthReport needs multi-subsystem traversal)
+// and 5 more Chassis commands (GetChassisThermals, GetPsuInventory,
+// GetHealthReport, and HPE-specific GetHPEThermalConfig/
+// GetHPEFanPercentMin) — a later increment of this same batch.
 //
-// # A real bug this increment also fixed
+// # A real bug a prior increment fixed
 //
 // redfishGetBareSystem (and redfishResourceSubURI in redfish_config.go,
 // and the ResetToDefaults discovery in redfish_command.go) called a
@@ -98,14 +133,16 @@ import (
 // redfishtool's own "collection" operation, not "get" — so those calls
 // were decoding a `{Members:[...]}` collection into the single-
 // resource shape their callers expect. Fixed by adding "-1" to all
-// three call sites (and to this file's own new redfishGetBareChassis).
-// AccountService/SessionService are unaffected: they're Redfish
-// singletons (no Id-based collection), and their own Main functions
-// default a bare call straight to "get" — confirmed separately.
+// three call sites (and to redfishGetBareChassis/redfishGetBareManager,
+// both written with it from the start). AccountService/SessionService
+// are unaffected: they're Redfish singletons (no Id-based collection),
+// and their own Main functions default a bare call straight to "get" —
+// confirmed separately.
 //
 // Args: category (required list); command (list, defaults per category
 // when omitted); baseuri (required, real effect); username/password
-// (real effect); auth_token (not supported, fails loud).
+// (real effect); manager (real effect, GetServiceIdentification only);
+// auth_token (not supported, fails loud).
 func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	categories := argStringList(args, "category")
 	if len(categories) == 0 {
@@ -164,11 +201,11 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 				}
 				switch command {
 				case "GetSystemInventory":
-					facts["system"] = redfishAggregateOneSystem(systemURI, redfishSystemInventoryEntries(sysData))
+					facts["system"] = redfishAggregateOne("system_uri", systemURI, redfishSystemInventoryEntries(sysData))
 				case "GetBootOverride":
-					facts["boot_override"] = redfishAggregateOneSystem(systemURI, redfishBootOverrideEntries(sysData))
+					facts["boot_override"] = redfishAggregateOne("system_uri", systemURI, redfishBootOverrideEntries(sysData))
 				case "GetPowerRestorePolicy":
-					facts["power_restore_policy"] = redfishAggregateOneSystem(systemURI, sysData["PowerRestorePolicy"])
+					facts["power_restore_policy"] = redfishAggregateOne("system_uri", systemURI, sysData["PowerRestorePolicy"])
 				}
 
 			case "Chassis":
@@ -226,6 +263,65 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 					}
 					facts["session"] = v
 				}
+
+			case "Update":
+				updateService, res, err := redfishGetBareUpdateService(ctx, conn, baseuri, username, password)
+				if err != nil {
+					return Result{}, err
+				}
+				if res.Failed {
+					return res, nil
+				}
+				switch command {
+				case "GetFirmwareInventory":
+					v, err := redfishSoftwareOrFirmwareInventory(ctx, conn, baseuri, username, password, updateService, "FirmwareInventory", "No FirmwareInventory resource found")
+					if err != nil {
+						return Result{}, err
+					}
+					facts["firmware"] = v
+				case "GetSoftwareInventory":
+					v, err := redfishSoftwareOrFirmwareInventory(ctx, conn, baseuri, username, password, updateService, "SoftwareInventory", "No SoftwareInventory resource found")
+					if err != nil {
+						return Result{}, err
+					}
+					facts["software"] = v
+				case "GetFirmwareUpdateCapabilities":
+					facts["firmware_update_capabilities"] = redfishFirmwareUpdateCapabilities(updateService)
+				}
+
+			case "Manager":
+				managerURI, mgrData, res, err := redfishGetBareManager(ctx, conn, baseuri, username, password)
+				if err != nil {
+					return Result{}, err
+				}
+				if res.Failed {
+					return res, nil
+				}
+				switch command {
+				case "GetManagerInventory":
+					facts["manager"] = redfishAggregateOne("manager_uri", managerURI, redfishManagerInventoryEntries(mgrData))
+				case "GetNetworkProtocols":
+					v, err := redfishGetNetworkProtocols(ctx, conn, baseuri, username, password, mgrData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["network_protocols"] = v
+				case "GetServiceIdentification":
+					v, res, err := redfishGetServiceIdentification(ctx, conn, baseuri, username, password, mgrData, argString(args, "manager", ""))
+					if err != nil {
+						return Result{}, err
+					}
+					if res.Failed {
+						return res, nil
+					}
+					facts["service_id"] = v
+				case "GetManagerNicInventory":
+					v, err := redfishGetManagerNicInventory(ctx, conn, baseuri, username, password, managerURI, mgrData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["manager_nics"] = v
+				}
 			}
 		}
 	}
@@ -238,8 +334,8 @@ var redfishInfoCategories = map[string][]string{
 	"Chassis":  {"GetChassisInventory", "GetFanInventory", "GetChassisPower"},
 	"Accounts": {"ListUsers", "GetAccountServiceConfig"},
 	"Sessions": {"GetSessions"},
-	"Update":   {},
-	"Manager":  {},
+	"Update":   {"GetFirmwareInventory", "GetSoftwareInventory", "GetFirmwareUpdateCapabilities"},
+	"Manager":  {"GetManagerInventory", "GetNetworkProtocols", "GetServiceIdentification", "GetManagerNicInventory"},
 	"Service":  {"CheckAvailability"},
 }
 
@@ -253,14 +349,20 @@ var redfishInfoDefaultCommand = map[string]string{
 	"Service":  "CheckAvailability",
 }
 
-// redfishAggregateOneSystem wraps one system's own entries in the same
-// `[{"system_uri": uri}, {...entries}]` shape real Ansible's own
-// aggregate_systems (a Python tuple, JSON-serialized as a 2-element
-// array) produces for a single-member list — see this file's own doc
-// comment for why this port only ever has one member.
-func redfishAggregateOneSystem(systemURI string, entries any) []any {
+// redfishAggregateOne wraps one resource's own entries in the same
+// `[{<key>: uri}, {...entries}]` shape real Ansible's own
+// aggregate_systems/aggregate_managers/get_multi_nic_inventory (each a
+// Python tuple, JSON-serialized as a 2-element array) produce for a
+// single-member list — see this file's own doc comment for why this
+// port only ever has one member. Key differs per real caller:
+// "system_uri" (aggregate_systems), "manager_uri"
+// (aggregate_managers/get_multi_manager_inventory), "resource_uri"
+// (get_multi_nic_inventory/get_multi_virtualmedia) — generalized from
+// the Systems-only redfishAggregateOneSystem the moment Manager's own
+// info commands needed the identical shape under different key names.
+func redfishAggregateOne(key, uri string, entries any) []any {
 	return []any{
-		[]any{map[string]any{"system_uri": systemURI}, entries},
+		[]any{map[string]any{key: uri}, entries},
 	}
 }
 
@@ -614,4 +716,279 @@ func redfishListCollectionMembers(ctx context.Context, conn remoteexec.Connectio
 		uris[i] = m.ODataID
 	}
 	return uris, r, nil
+}
+
+// redfishGetBareUpdateService discovers and GETs the UpdateService
+// resource: `redfishtool root` (the ServiceRoot resource, the same
+// discovery hop redfish_command.go's own SimpleUpdate already uses,
+// since redfishtool has no named UpdateService subcommand at all —
+// confirmed absent from its own subcommand list), find the
+// "UpdateService" link, GET it. Doubles as the category-level
+// existence gate (matching real `_find_updateservice_resource`); the
+// returned map already carries "FirmwareInventory"/"SoftwareInventory"
+// sub-links and "Actions" directly, exactly what real
+// `_find_updateservice_resource` itself reads before any command runs.
+func redfishGetBareUpdateService(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string) (map[string]any, Result, error) {
+	var root map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &root, "root")
+	if err != nil {
+		return nil, Result{}, err
+	}
+	if r.RC != 0 {
+		return nil, Fail("redfish_info: UpdateService resource not found: " + redfishtoolErrMsg(r)), nil
+	}
+	link, ok := root["UpdateService"].(map[string]any)
+	if !ok {
+		return nil, Fail("redfish_info: UpdateService resource not found"), nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	var svc map[string]any
+	r2, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &svc, "raw", "GET", uri)
+	if err != nil {
+		return nil, Result{}, err
+	}
+	if r2.RC != 0 {
+		return nil, Fail("redfish_info: UpdateService resource not found: " + redfishtoolErrMsg(r2)), nil
+	}
+	return svc, Result{}, nil
+}
+
+// redfishSoftwareOrFirmwareInventory reproduces real
+// `_software_inventory` (shared by get_firmware_inventory and
+// get_software_inventory) for the collection linked from
+// updateService[collKey]: list its members (single page only — a real,
+// disclosed narrowing, see this file's own doc comment), GET each, and
+// copy the 9 properties real `_software_inventory` itself reads.
+func redfishSoftwareOrFirmwareInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, updateService map[string]any, collKey, missingMsg string) (map[string]any, error) {
+	coll, ok := updateService[collKey].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": missingMsg}, nil
+	}
+	uri, _ := coll["@odata.id"].(string)
+	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	properties := []string{
+		"Name", "Id", "Status", "Version", "Updateable",
+		"SoftwareId", "LowestSupportedVersion", "Manufacturer", "ReleaseDate",
+	}
+	entries := []any{}
+	for _, memberURI := range members {
+		var data map[string]any
+		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", memberURI)
+		if err != nil {
+			return nil, err
+		}
+		if mr.RC != 0 {
+			return map[string]any{"ret": false, "msg": redfishtoolErrMsg(mr)}, nil
+		}
+		entry := map[string]any{}
+		for _, p := range properties {
+			if v, ok := data[p]; ok {
+				entry[p] = v
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return map[string]any{"ret": true, "entries": entries}, nil
+}
+
+// redfishFirmwareUpdateCapabilities reproduces real
+// get_firmware_update_capabilities exactly: "MultipartHttpPushUri"'s
+// mere presence (not its value) sets multipart_supported; each entry
+// under the UpdateService's own "Actions" dict becomes one output
+// entry keyed by that action's "title" (falling back to the action's
+// own dict key when absent), valued by its
+// "TransferProtocol@Redfish.AllowableValues" (falling back to real
+// Ansible's own exact placeholder string when absent) — reproducing
+// its exact two soft-failure messages when Actions is missing or
+// empty.
+func redfishFirmwareUpdateCapabilities(updateService map[string]any) map[string]any {
+	_, multipartSupported := updateService["MultipartHttpPushUri"]
+	actions, ok := updateService["Actions"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": "Key Actions not found."}
+	}
+	if len(actions) == 0 {
+		return map[string]any{"ret": false, "msg": "Actions list is empty."}
+	}
+	entries := map[string]any{}
+	for key, raw := range actions {
+		action, _ := raw.(map[string]any)
+		title, ok := action["title"].(string)
+		if !ok || title == "" {
+			title = key
+		}
+		allowable, ok := action["TransferProtocol@Redfish.AllowableValues"]
+		if !ok {
+			allowable = []any{"Key TransferProtocol@Redfish.AllowableValues not found"}
+		}
+		entries[title] = allowable
+	}
+	return map[string]any{"ret": true, "entries": entries, "multipart_supported": multipartSupported}
+}
+
+// redfishGetBareManager GETs the bare Manager resource ("-1" required
+// for the same reason documented on redfishGetBareSystem/
+// redfishGetBareChassis) and returns its own @odata.id alongside the
+// full decoded JSON — matching real redfish_info.py's own per-category
+// gate: `_find_managers_resource` hard-fails the whole category if no
+// Manager resource exists at all.
+func redfishGetBareManager(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string) (string, map[string]any, Result, error) {
+	var mgr map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &mgr, "-1", "Managers")
+	if err != nil {
+		return "", nil, Result{}, err
+	}
+	if r.RC != 0 {
+		return "", nil, Fail("redfish_info: Managers resource not found: " + redfishtoolErrMsg(r)), nil
+	}
+	uri, _ := mgr["@odata.id"].(string)
+	return uri, mgr, Result{}, nil
+}
+
+// redfishManagerInventoryEntries copies exactly the properties real
+// get_manager_inventory itself reads (confirmed from its own source),
+// each included only if present.
+func redfishManagerInventoryEntries(mgrData map[string]any) map[string]any {
+	properties := []string{
+		"Id", "FirmwareVersion", "ManagerType", "Manufacturer", "Model",
+		"PartNumber", "PowerState", "SerialNumber", "ServiceIdentification",
+		"Status", "UUID",
+	}
+	entries := map[string]any{}
+	for _, p := range properties {
+		if v, ok := mgrData[p]; ok {
+			entries[p] = v
+		}
+	}
+	return entries
+}
+
+// redfishGetNetworkProtocols reproduces real get_network_protocols:
+// discover the Manager's own "NetworkProtocol" link (redfishtool has a
+// NAMED subcommand for it, `Managers NetworkProtocol`, already used by
+// redfish_config.go's own SetNetworkProtocols discovery), GET it, and
+// keep only the same 14 known protocol-service names
+// `redfishNetworkProtocolServices` (redfish_config.go) already
+// validates SetNetworkProtocols input against — reused verbatim rather
+// than redefining the same real list twice.
+func redfishGetNetworkProtocols(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, mgrData map[string]any) (map[string]any, error) {
+	link, ok := mgrData["NetworkProtocol"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": "NetworkProtocol resource not found"}, nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	entries := map[string]any{}
+	for name, v := range data {
+		if redfishNetworkProtocolServices[name] {
+			entries[name] = v
+		}
+	}
+	return map[string]any{"ret": true, "entries": entries}, nil
+}
+
+// redfishGetServiceIdentification reproduces real
+// get_service_identification for this port's single-manager scope: the
+// real function resolves an omitted `manager` argument from the sole
+// discovered manager's own Id when there is exactly one manager (this
+// port's own permanent scope, so that always applies) and GETs a
+// hardcoded absolute path `/redfish/v1/Managers/<id>` directly rather
+// than the already-discovered manager URI — confirmed from its own
+// source, not assumed to reuse mgrData's own resource. A missing
+// "ServiceIdentification" property is a REAL, DISCLOSED EXCEPTION to
+// this whole file's own soft-fail convention: real
+// get_service_identification calls `module.fail_json` directly rather
+// than returning `{"ret": False, ...}` like every sibling get_* — this
+// port reproduces that as a genuine Result{Failed:true}, not a soft
+// embed.
+func redfishGetServiceIdentification(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, mgrData map[string]any, manager string) (map[string]any, Result, error) {
+	if manager == "" {
+		id, ok := mgrData["Id"].(string)
+		if !ok || id == "" {
+			return nil, Fail("redfish_info: GetServiceIdentification: could not determine the manager identity"), nil
+		}
+		manager = id
+	}
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", "/redfish/v1/Managers/"+manager)
+	if err != nil {
+		return nil, Result{}, err
+	}
+	if r.RC != 0 {
+		return nil, Fail("redfish_info: GetServiceIdentification: " + redfishtoolErrMsg(r)), nil
+	}
+	serviceID, ok := data["ServiceIdentification"]
+	if !ok {
+		return nil, Fail("redfish_info: GetServiceIdentification: Service ID not found for manager " + manager), nil
+	}
+	return map[string]any{"ret": true, "service_identification": serviceID}, Result{}, nil
+}
+
+// redfishNicEntries copies exactly the properties real get_nic itself
+// reads (confirmed from its own source, and reused unchanged by real
+// get_hostinterfaces for its own embedded NIC lookups — GetHostInterfaces
+// itself remains unwired this increment, see this file's own doc
+// comment, but the same whitelist is captured here as its own named
+// function against the day that command is picked up).
+func redfishNicEntries(data map[string]any) map[string]any {
+	properties := []string{
+		"Name", "Id", "Description", "FQDN", "IPv4Addresses", "IPv6Addresses",
+		"NameServers", "MACAddress", "PermanentMACAddress", "SpeedMbps",
+		"MTUSize", "AutoNeg", "Status", "LinkStatus",
+	}
+	entries := map[string]any{}
+	for _, p := range properties {
+		if v, ok := data[p]; ok {
+			entries[p] = v
+		}
+	}
+	return entries
+}
+
+// redfishGetManagerNicInventory reproduces real get_nic_inventory for
+// the Manager's own EthernetInterfaces: list the collection (redfishtool's
+// own `Managers EthernetInterfaces list`), GET each member, whitelist via
+// redfishNicEntries, wrapped in the same one-element aggregate-tuple
+// shape real get_multi_nic_inventory itself produces under its own
+// "resource_uri" key (confirmed from its own source — a different key
+// than GetManagerInventory's "manager_uri", not a typo).
+func redfishGetManagerNicInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, managerURI string, mgrData map[string]any) ([]any, error) {
+	link, ok := mgrData["EthernetInterfaces"].(map[string]any)
+	if !ok {
+		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
+	}
+	uri, _ := link["@odata.id"].(string)
+	members, r, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", uri)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return redfishAggregateOne("resource_uri", managerURI, []any{}), nil
+	}
+	entries := []any{}
+	for _, memberURI := range members {
+		var data map[string]any
+		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", memberURI)
+		if err != nil {
+			return nil, err
+		}
+		if mr.RC != 0 {
+			continue
+		}
+		entries = append(entries, redfishNicEntries(data))
+	}
+	return redfishAggregateOne("resource_uri", managerURI, entries), nil
 }
