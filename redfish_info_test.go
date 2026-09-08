@@ -405,6 +405,13 @@ func TestModuleRedfishInfoGetFanInventoryNoThermalIsEmptyNotFailure(t *testing.T
 	}
 	facts, _ := res.Extra["redfish_facts"].(map[string]any)
 	fan, _ := facts["fan"].(map[string]any)
+	// Real get_fan_inventory sets result["ret"]=True unconditionally
+	// right after the bare-chassis GET succeeds, BEFORE checking
+	// whether "Thermal" is present — so a missing Thermal link is
+	// still ret:true with empty entries, not a ret-less result.
+	if fan["ret"] != true {
+		t.Fatalf("fan = %+v, want ret:true", fan)
+	}
 	entries, _ := fan["entries"].([]any)
 	if len(entries) != 0 {
 		t.Fatalf("fan = %+v, want empty entries", fan)
@@ -1904,5 +1911,235 @@ func TestModuleRedfishInfoGetVolumeInventorySimpleStorageOnlySoftFails(t *testin
 	// not found" even though SimpleStorage itself IS present.
 	if volResult["ret"] != false {
 		t.Fatalf("volume = %+v, want ret:false (no Storage key, SimpleStorage has no volume concept)", volResult)
+	}
+}
+
+func TestModuleRedfishInfoGetChassisThermals(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/","Thermal":{"@odata.id":"/redfish/v1/Chassis/1/Thermal"}}`}
+	thermalCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/Thermal; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[thermalCmd] = remoteexec.Result{RC: 0, Stdout: `{"Temperatures":[{"Name":"CPU1 Temp","ReadingCelsius":45,"Status":{"Health":"OK"},"Unrelated":"x"}]}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetChassisThermals"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	thermals, _ := facts["thermals"].(map[string]any)
+	if thermals["ret"] != true {
+		t.Fatalf("thermals = %+v", thermals)
+	}
+	entries, _ := thermals["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1", entries)
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["Name"] != "CPU1 Temp" || entry["ReadingCelsius"] != float64(45) {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if _, ok := entry["Unrelated"]; ok {
+		t.Fatalf("entry should not include unrelated properties: %+v", entry)
+	}
+}
+
+func TestModuleRedfishInfoGetChassisThermalsNoThermalIsEmptySuccess(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetChassisThermals"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	thermals, _ := facts["thermals"].(map[string]any)
+	if thermals["ret"] != true {
+		t.Fatalf("thermals = %+v, want ret:true (no Thermal link is a real silent skip, not a failure)", thermals)
+	}
+	entries, _ := thermals["entries"].([]any)
+	if len(entries) != 0 {
+		t.Fatalf("entries = %+v, want empty", entries)
+	}
+}
+
+func TestModuleRedfishInfoGetChassisThermalsNoTemperaturesIsEmptySuccess(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/","Thermal":{"@odata.id":"/redfish/v1/Chassis/1/Thermal"}}`}
+	thermalCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/Thermal; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[thermalCmd] = remoteexec.Result{RC: 0, Stdout: `{"Fans":[]}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetChassisThermals"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	thermals, _ := facts["thermals"].(map[string]any)
+	// Unlike GetFanInventory's own "No Fans present" soft failure when
+	// "Fans" is absent, real get_chassis_thermals has NO equivalent
+	// check for a missing "Temperatures" key — a real, confirmed
+	// asymmetry between the two commands.
+	if thermals["ret"] != true {
+		t.Fatalf("thermals = %+v, want ret:true (missing Temperatures is silently skipped, unlike GetFanInventory's Fans check)", thermals)
+	}
+	entries, _ := thermals["entries"].([]any)
+	if len(entries) != 0 {
+		t.Fatalf("entries = %+v, want empty", entries)
+	}
+}
+
+func TestModuleRedfishInfoGetPsuInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/","Power":{"@odata.id":"/redfish/v1/Chassis/1/Power"}}`}
+	powerCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/Power; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[powerCmd] = remoteexec.Result{RC: 0, Stdout: `{"PowerSupplies":[{"Name":"PSU1","Model":"750W","Status":{"State":"Enabled","Health":"OK"},"Unrelated":"x"},{"Name":"PSU2","Status":{"State":"Absent"}}]}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetPsuInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	psu, _ := facts["psu"].(map[string]any)
+	if psu["ret"] != true {
+		t.Fatalf("psu = %+v", psu)
+	}
+	entries, _ := psu["entries"].([]any)
+	// PSU2 is Absent and should be filtered out entirely.
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want 1 (Absent PSU filtered)", entries)
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["Model"] != "750W" {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if _, ok := entry["Unrelated"]; ok {
+		t.Fatalf("entry should not include unrelated properties: %+v", entry)
+	}
+}
+
+func TestModuleRedfishInfoGetPsuInventoryNoPowerLinkSoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetPsuInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	psu, _ := facts["psu"].(map[string]any)
+	if psu["ret"] != false || psu["msg"] != "No PowerSupply objects found" {
+		t.Fatalf("psu = %+v", psu)
+	}
+}
+
+func TestModuleRedfishInfoGetPsuInventoryMissingPowerSuppliesKeySoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/","Power":{"@odata.id":"/redfish/v1/Chassis/1/Power"}}`}
+	powerCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Chassis/1/Power; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[powerCmd] = remoteexec.Result{RC: 0, Stdout: `{}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetPsuInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	psu, _ := facts["psu"].(map[string]any)
+	// A DIFFERENT real soft-fail message than the missing-Power-link
+	// case above — confirmed from source, not assumed to be the same.
+	if psu["ret"] != false || psu["msg"] != "Key PowerSupplies not found" {
+		t.Fatalf("psu = %+v", psu)
+	}
+}
+
+func TestModuleRedfishInfoGetHPEThermalConfig(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/","Oem":{"Hpe":{"ThermalConfiguration":"OptimalCooling"}}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetHPEThermalConfig"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	tc, _ := facts["hpe_thermal_config"].(map[string]any)
+	if tc["ret"] != true || tc["current_thermal_config"] != "OptimalCooling" {
+		t.Fatalf("hpe_thermal_config = %+v", tc)
+	}
+}
+
+func TestModuleRedfishInfoGetHPEThermalConfigAbsentSoftFailsNoMessage(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetHPEThermalConfig"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	tc, _ := facts["hpe_thermal_config"].(map[string]any)
+	// Real get_hpe_thermal_config returns {"ret": False} with NO "msg"
+	// key at all when not found — confirmed from source.
+	if tc["ret"] != false {
+		t.Fatalf("hpe_thermal_config = %+v, want ret:false", tc)
+	}
+	if _, ok := tc["msg"]; ok {
+		t.Fatalf("hpe_thermal_config = %+v, want no msg key", tc)
+	}
+}
+
+func TestModuleRedfishInfoGetHPEFanPercentMin(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	chassisCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Chassis; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[chassisCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Chassis/1/","Oem":{"Hpe":{"FanPercentMinimum":30}}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Chassis"}, "command": []any{"GetHPEFanPercentMin"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	fm, _ := facts["hpe_fan_percent_min"].(map[string]any)
+	if fm["ret"] != true || fm["fan_percent_min"] != float64(30) {
+		t.Fatalf("hpe_fan_percent_min = %+v", fm)
 	}
 }

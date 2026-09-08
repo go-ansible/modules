@@ -112,19 +112,46 @@ import (
 //     redfishGetDiskInventory's own doc comment for the full
 //     reasoning) — a system exposing BOTH Storage and SimpleStorage
 //     with real populated data is genuinely rare in practice anyway.
-//   - Chassis: GetChassisInventory, GetFanInventory, GetChassisPower,
-//     GetHealthReport, each reading the bare `Chassis` resource (same
-//     --One single-chassis narrowing as Systems above) —
-//     GetFanInventory/GetChassisPower each additionally discover and
-//     GET their own Thermal/Power sub-resource, reproducing real
-//     get_fan_inventory/get_chassis_power's exact soft-failure text
-//     ("No Fans present", "Power information not found.") when the
-//     expected link or property is missing, confirmed field-by-field
-//     from their own source, not guessed. GetHealthReport is likewise
-//     the real aggregate-wrapped form (`get_multi_chassis_health_report`
-//     via `aggregate_chassis`, under its own "chassis_uri" key —
-//     confirmed from `aggregate_chassis`'s own source, not assumed to
-//     match Systems'/Manager's key names).
+//   - Chassis: all 8 real commands, completing this category (the
+//     SECOND to reach 100%, after Manager). GetChassisInventory,
+//     GetFanInventory, GetChassisPower, GetHealthReport, each reading
+//     the bare `Chassis` resource (same --One single-chassis narrowing
+//     as Systems above) — GetFanInventory/GetChassisPower each
+//     additionally discover and GET their own Thermal/Power
+//     sub-resource, reproducing real get_fan_inventory/
+//     get_chassis_power's exact soft-failure text ("No Fans present",
+//     "Power information not found.") when the expected link or
+//     property is missing, confirmed field-by-field from their own
+//     source, not guessed. GetHealthReport is likewise the real
+//     aggregate-wrapped form (`get_multi_chassis_health_report` via
+//     `aggregate_chassis`, under its own "chassis_uri" key — confirmed
+//     from `aggregate_chassis`'s own source, not assumed to match
+//     Systems'/Manager's key names). GetChassisThermals reads
+//     Thermal.Temperatures (a real, confirmed ASYMMETRY from
+//     GetFanInventory: unlike Fans, a missing Temperatures key is
+//     silently skipped, not a soft failure). GetPsuInventory reads
+//     Power.PowerSupplies, filtering out any PSU whose own Status.State
+//     is "Absent" — its real dispatch call is the DIRECT, non-aggregate
+//     `get_psu_inventory()`, confirmed from redfish_info.py's own
+//     dispatch table; a `get_multi_psu_inventory` sibling exists in
+//     source but is genuinely UNUSED dead code (an incomplete refactor
+//     — its own `aggregate_systems` call would pass an argument
+//     `get_psu_inventory` doesn't accept, a real latent bug in code
+//     that's simply never exercised). GetHPEThermalConfig/
+//     GetHPEFanPercentMin read `Oem.Hpe.ThermalConfiguration`/
+//     `Oem.Hpe.FanPercentMinimum` directly off the already-fetched bare
+//     Chassis resource — genuinely NOT vendor-hardware-dependent to
+//     implement (unlike GetBiosRegistries' own real iLO4/iLO5
+//     workarounds) despite the HPE-branded field names; real Ansible
+//     returns a bare `{"ret": False}` with NO "msg" key at all when
+//     absent, reproduced exactly.
+//
+// A real bug found and fixed in an ALREADY-SHIPPED function while
+// researching GetChassisThermals: redfishGetFanInventory's own
+// "Thermal absent" branch omitted "ret" entirely instead of the real
+// `ret: true` real Ansible sets unconditionally right after the
+// bare-chassis GET succeeds (before even checking for "Thermal") — see
+// redfishGetFanInventory's own doc comment for the fix.
 //   - Accounts: ListUsers (list `AccountService Accounts`, GET each
 //     member, filter empty account slots exactly as real list_users
 //     does: UserName=="" and not Enabled) and GetAccountServiceConfig
@@ -198,14 +225,16 @@ import (
 // PowerSupplies/Fans-style objects embedded directly in their parent
 // resource — skips a redundant GET and uses the embedded object as-is).
 //
-// 4 more Chassis commands (GetChassisThermals, GetPsuInventory, and
-// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) and 1 more
-// Systems command remain unwired: GetBiosRegistries (needs a
-// vendor-aware `Location`/`Language` lookup with real, disclosed HPE
-// iLO4/iLO5-specific workarounds this port has no hardware to verify
-// against) — a later increment of this same batch, or left
-// permanently disclosed if the vendor-specific pieces prove
-// unverifiable.
+// Chassis is now complete (8/8). Systems has exactly 1 command left
+// unwired: GetBiosRegistries (needs a vendor-aware `Location`/
+// `Language` lookup with real, disclosed HPE iLO4/iLO5-specific
+// workarounds this port has no hardware to verify against) — likely
+// PERMANENT disclosed-gap status rather than a future increment, since
+// no amount of further source-reading changes the lack of real
+// hardware to verify against. Combined with GetUpdateStatus (Update,
+// architecturally blocked — see above), these are the only two
+// commands left anywhere in `redfish_info` that this port cannot
+// reach through further CLI-substitution work alone.
 //
 // # A real bug a prior increment fixed
 //
@@ -381,6 +410,30 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 						return Result{}, err
 					}
 					facts["health_report"] = v
+				case "GetChassisThermals":
+					v, err := redfishGetChassisThermals(ctx, conn, baseuri, username, password, chassisData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["thermals"] = v
+				case "GetPsuInventory":
+					v, err := redfishGetPsuInventory(ctx, conn, baseuri, username, password, chassisData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["psu"] = v
+				case "GetHPEThermalConfig":
+					v, err := redfishGetHPEThermalConfig(ctx, conn, baseuri, username, password, chassisData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["hpe_thermal_config"] = v
+				case "GetHPEFanPercentMin":
+					v, err := redfishGetHPEFanPercentMin(ctx, conn, baseuri, username, password, chassisData)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["hpe_fan_percent_min"] = v
 				}
 
 			case "Accounts":
@@ -510,7 +563,10 @@ var redfishInfoCategories = map[string][]string{
 		"GetBiosAttributes", "GetBootOrder", "GetStorageControllerInventory",
 		"GetDiskInventory", "GetVolumeInventory",
 	},
-	"Chassis":  {"GetChassisInventory", "GetFanInventory", "GetChassisPower", "GetHealthReport"},
+	"Chassis": {
+		"GetChassisInventory", "GetFanInventory", "GetChassisPower", "GetHealthReport",
+		"GetChassisThermals", "GetPsuInventory", "GetHPEThermalConfig", "GetHPEFanPercentMin",
+	},
 	"Accounts": {"ListUsers", "GetAccountServiceConfig"},
 	"Sessions": {"GetSessions"},
 	"Update":   {"GetFirmwareInventory", "GetSoftwareInventory", "GetFirmwareUpdateCapabilities"},
@@ -705,8 +761,15 @@ func redfishChassisInventoryEntry(chassisData map[string]any) map[string]any {
 // redfishGetFanInventory reproduces real get_fan_inventory exactly for
 // the single chassis this port already has in hand: if the chassis has
 // no "Thermal" link at all, real Ansible's own loop just skips that
-// chassis silently (no failure) — reproduced here as an empty,
-// ret-less entries list. If Thermal exists but its own "Fans" property
+// chassis silently (no failure) — reproduced here as an empty entries
+// list. A real, easy-to-miss detail confirmed by reading the exact
+// source line order: real Ansible sets `result["ret"] = True`
+// UNCONDITIONALLY right after the bare-chassis GET succeeds (before
+// even checking whether "Thermal" is present), not only after finding
+// Fans — so a missing Thermal link is still `ret: true` with empty
+// entries, NOT a ret-less/failed result (an earlier increment's own
+// implementation had this wrong, omitting "ret" entirely in that
+// case — fixed here). If Thermal exists but its own "Fans" property
 // doesn't, real Ansible returns `{"ret": False, "msg": "No Fans
 // present"}` — a soft, per-command failure embedded in redfish_facts,
 // not a module failure (see this file's own doc comment), reproduced
@@ -715,7 +778,7 @@ func redfishChassisInventoryEntry(chassisData map[string]any) map[string]any {
 func redfishGetFanInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, chassisData map[string]any) (map[string]any, error) {
 	thermal, ok := chassisData["Thermal"].(map[string]any)
 	if !ok {
-		return map[string]any{"entries": []any{}}, nil
+		return map[string]any{"ret": true, "entries": []any{}}, nil
 	}
 	thermalURI, _ := thermal["@odata.id"].(string)
 	var data map[string]any
@@ -2430,4 +2493,184 @@ func redfishGetVolumeInventory(ctx context.Context, conn remoteexec.Connection, 
 		entries = append(entries, map[string]any{"Controller": controllerName, "Volumes": volumeResults})
 	}
 	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
+}
+
+// redfishGetChassisThermals reproduces real get_chassis_thermals for
+// the single chassis this port already has in hand: a missing
+// "Thermal" link is real Ansible's own silent skip (confirmed from
+// source: `result["ret"] = True` is set unconditionally right after
+// the bare-chassis GET succeeds, before checking for "Thermal" at
+// all — the SAME real detail already fixed for redfishGetFanInventory,
+// see its own doc comment), so this reports `ret:true` with empty
+// entries, not a failure. A Thermal resource with no "Temperatures"
+// key is likewise silently skipped (confirmed from source: unlike
+// GetFanInventory's own "No Fans present" soft failure when "Fans" is
+// absent, real get_chassis_thermals has NO equivalent check for a
+// missing "Temperatures" key — a real, confirmed asymmetry between
+// the two commands, not assumed to match). Copies the 14-property
+// whitelist real get_chassis_thermals itself reads (non-nil values
+// only) from each Temperatures[] entry.
+func redfishGetChassisThermals(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, chassisData map[string]any) (map[string]any, error) {
+	thermal, ok := chassisData["Thermal"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": true, "entries": []any{}}, nil
+	}
+	thermalURI, _ := thermal["@odata.id"].(string)
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", thermalURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	properties := []string{
+		"Name", "PhysicalContext", "UpperThresholdCritical", "UpperThresholdFatal", "UpperThresholdNonCritical",
+		"LowerThresholdCritical", "LowerThresholdFatal", "LowerThresholdNonCritical", "MaxReadingRangeTemp",
+		"MinReadingRangeTemp", "ReadingCelsius", "RelatedItem", "SensorNumber", "Status",
+	}
+	entries := []any{}
+	if temps, ok := data["Temperatures"].([]any); ok {
+		for _, t := range temps {
+			tm, ok := t.(map[string]any)
+			if !ok {
+				continue
+			}
+			entry := map[string]any{}
+			for _, p := range properties {
+				if v, ok := tm[p]; ok && v != nil {
+					entry[p] = v
+				}
+			}
+			entries = append(entries, entry)
+		}
+	}
+	return map[string]any{"ret": true, "entries": entries}, nil
+}
+
+// redfishGetPsuInventory reproduces real get_psu_inventory exactly for
+// the single chassis this port already has in hand. Real
+// redfish_info.py's own dispatch calls `rf_utils.get_psu_inventory()`
+// directly, NOT `get_multi_psu_inventory()` — confirmed from its own
+// dispatch table, not assumed from the mere existence of a
+// `get_multi_*` sibling (that sibling exists but is genuinely UNUSED
+// dead code, left over from an apparent incomplete refactor: its own
+// `aggregate_systems` call would pass a positional `uri` argument to
+// `get_psu_inventory`, which accepts none beyond `self` — a real
+// latent bug in the unused function, irrelevant here since the actual
+// exercised code path never goes through it). A missing "Power" link,
+// OR the entries list ending up empty after filtering, both surface as
+// the SAME real message, "No PowerSupply objects found" — confirmed
+// from source (a missing "Power" key causes real Ansible's own loop to
+// `continue` past that chassis, and — with no chassis contributing any
+// entries — the function's own final `if not result["entries"]` check
+// catches it). A "Power" resource present but missing its own
+// "PowerSupplies" key is a DIFFERENT real soft failure, "Key
+// PowerSupplies not found" — a short-circuiting error, not folded into
+// the final empty-entries check. Copies the 9-property whitelist real
+// get_psu_inventory itself reads, filtering out any PSU whose own
+// Status.State is "Absent" (an empty PSU bay still has its own
+// resource, just marked absent — the same real pattern already
+// confirmed for GetMemoryInventory's DIMM filtering).
+func redfishGetPsuInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, chassisData map[string]any) (map[string]any, error) {
+	link, ok := chassisData["Power"].(map[string]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": "No PowerSupply objects found"}, nil
+	}
+	powerURI, _ := link["@odata.id"].(string)
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", powerURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	psuList, ok := data["PowerSupplies"].([]any)
+	if !ok {
+		return map[string]any{"ret": false, "msg": "Key PowerSupplies not found"}, nil
+	}
+	properties := []string{
+		"Name", "Model", "SerialNumber", "PartNumber", "Manufacturer",
+		"FirmwareVersion", "PowerCapacityWatts", "PowerSupplyType", "Status",
+	}
+	entries := []any{}
+	for _, p := range psuList {
+		psu, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		psuData := map[string]any{}
+		notPresent := false
+		for _, prop := range properties {
+			v, ok := psu[prop]
+			if !ok || v == nil {
+				continue
+			}
+			if prop == "Status" {
+				if statusMap, ok := v.(map[string]any); ok {
+					if state, ok := statusMap["State"].(string); ok && state == "Absent" {
+						notPresent = true
+					}
+				}
+			}
+			psuData[prop] = v
+		}
+		if notPresent {
+			continue
+		}
+		entries = append(entries, psuData)
+	}
+	if len(entries) == 0 {
+		return map[string]any{"ret": false, "msg": "No PowerSupply objects found"}, nil
+	}
+	return map[string]any{"ret": true, "entries": entries}, nil
+}
+
+// redfishOemHpeValue reads chassisData["Oem"]["Hpe"][key], returning
+// nil if any level of that chain is absent — the shared lookup real
+// get_hpe_thermal_config/get_hpe_fan_percent_min each perform via
+// `data.get("Oem", {}).get("Hpe", {}).get(key)`.
+func redfishOemHpeValue(chassisData map[string]any, key string) any {
+	oem, ok := chassisData["Oem"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	hpe, ok := oem["Hpe"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return hpe[key]
+}
+
+// redfishGetHPEThermalConfig reproduces real get_hpe_thermal_config
+// for the single chassis this port already has in hand: no further GET
+// needed beyond the category-level bare-chassis fetch already done —
+// real Ansible's own version does its own independent GET per
+// chassis_uri, but since this port's own scope is already narrowed to
+// one chassis (the same disclosed narrowing every Chassis command in
+// this file relies on), reusing the already-fetched chassisData is
+// equivalent and avoids a redundant GET, matching the same shortcut
+// GetChassisInventory already takes in this same file. Real Ansible
+// returns `{"ret": False}` with NO "msg" key at all when the value
+// isn't found on any chassis — confirmed from source, reproduced
+// exactly (not "improved" with an invented message).
+func redfishGetHPEThermalConfig(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, chassisData map[string]any) (map[string]any, error) {
+	val := redfishOemHpeValue(chassisData, "ThermalConfiguration")
+	if val == nil {
+		return map[string]any{"ret": false}, nil
+	}
+	return map[string]any{"ret": true, "current_thermal_config": val}, nil
+}
+
+// redfishGetHPEFanPercentMin reproduces real get_hpe_fan_percent_min —
+// see redfishGetHPEThermalConfig's own doc comment for the shared
+// reasoning (single-chassis reuse, the real `{"ret": False}`
+// no-message shape when absent).
+func redfishGetHPEFanPercentMin(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, chassisData map[string]any) (map[string]any, error) {
+	val := redfishOemHpeValue(chassisData, "FanPercentMinimum")
+	if val == nil {
+		return map[string]any{"ret": false}, nil
+	}
+	return map[string]any{"ret": true, "fan_percent_min": val}, nil
 }
