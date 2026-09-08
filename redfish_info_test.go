@@ -1611,3 +1611,298 @@ func TestModuleRedfishInfoGetBootOrderMissingKeySoftFails(t *testing.T) {
 		t.Fatalf("boot_order = %+v, want ret:false (Boot/BootOrder key missing)", bootOrderResult)
 	}
 }
+
+func TestModuleRedfishInfoGetStorageControllerInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Storage":{"@odata.id":"/redfish/v1/Systems/1/Storage"}}`}
+	storageListCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageListCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID"}]}`}
+	storageMemberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageMemberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"RAID","Controllers":{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Controllers"}}`}
+	ctrlListCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID/Controllers; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[ctrlListCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Controllers/0"}]}`}
+	ctrlCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID/Controllers/0; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[ctrlCmd] = remoteexec.Result{RC: 0, Stdout: `{"Name":"RAID Controller","Model":"PERC H730","Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetStorageControllerInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	scResult, _ := facts["storage_controller"].(map[string]any)
+	if scResult["ret"] != true {
+		t.Fatalf("storage_controller = %+v", scResult)
+	}
+	entries, _ := scResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	controllers, _ := pair[1].([]any)
+	if len(controllers) != 1 {
+		t.Fatalf("controllers = %+v, want 1", controllers)
+	}
+	ctrl, _ := controllers[0].(map[string]any)
+	if ctrl["Model"] != "PERC H730" {
+		t.Fatalf("ctrl = %+v", ctrl)
+	}
+	if _, ok := ctrl["Unrelated"]; ok {
+		t.Fatalf("ctrl should not include unrelated properties: %+v", ctrl)
+	}
+}
+
+func TestModuleRedfishInfoGetStorageControllerInventoryDeprecatedShape(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Storage":{"@odata.id":"/redfish/v1/Systems/1/Storage"}}`}
+	storageListCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageListCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID"}]}`}
+	storageMemberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageMemberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"RAID","StorageControllers":[{"Model":"Legacy Ctrl","Name":"Legacy"}]}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetStorageControllerInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	scResult, _ := facts["storage_controller"].(map[string]any)
+	entries, _ := scResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	controllers, _ := pair[1].([]any)
+	if len(controllers) != 1 {
+		t.Fatalf("controllers = %+v, want 1", controllers)
+	}
+	ctrl, _ := controllers[0].(map[string]any)
+	if ctrl["Model"] != "Legacy Ctrl" {
+		t.Fatalf("ctrl = %+v", ctrl)
+	}
+}
+
+func TestModuleRedfishInfoGetStorageControllerInventoryMissingSoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetStorageControllerInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	scResult, _ := facts["storage_controller"].(map[string]any)
+	if scResult["ret"] != false {
+		t.Fatalf("storage_controller = %+v, want ret:false (Storage key missing)", scResult)
+	}
+}
+
+func TestModuleRedfishInfoGetDiskInventoryStoragePath(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Storage":{"@odata.id":"/redfish/v1/Systems/1/Storage"}}`}
+	storageListCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageListCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID"}]}`}
+	storageMemberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageMemberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"RAID","StorageControllers":[{"Name":"Embedded RAID"}],"Drives":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Drives/0"}]}`}
+	driveCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID/Drives/0; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[driveCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Drives/0","Model":"SSD500","CapacityBytes":500000000000,"Links":{"Volumes":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Volumes/0"}]},"Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetDiskInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	diskResult, _ := facts["disk"].(map[string]any)
+	if diskResult["ret"] != true {
+		t.Fatalf("disk = %+v", diskResult)
+	}
+	entries, _ := diskResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	groups, _ := pair[1].([]any)
+	group, _ := groups[0].(map[string]any)
+	if group["Controller"] != "Embedded RAID" || group["StorageId"] != "RAID" {
+		t.Fatalf("group = %+v", group)
+	}
+	drives, _ := group["Drives"].([]any)
+	if len(drives) != 1 {
+		t.Fatalf("drives = %+v, want 1", drives)
+	}
+	drive, _ := drives[0].(map[string]any)
+	if drive["Model"] != "SSD500" || drive["RedfishURI"] != "/redfish/v1/Systems/1/Storage/RAID/Drives/0" {
+		t.Fatalf("drive = %+v", drive)
+	}
+	vols, _ := drive["Volumes"].([]any)
+	if len(vols) != 1 || vols[0] != "/redfish/v1/Systems/1/Storage/RAID/Volumes/0" {
+		t.Fatalf("drive Volumes = %+v", vols)
+	}
+	if _, ok := drive["Unrelated"]; ok {
+		t.Fatalf("drive should not include unrelated properties: %+v", drive)
+	}
+	if _, ok := drive["Links"]; ok {
+		t.Fatalf("drive should not include raw Links (special-cased into Volumes): %+v", drive)
+	}
+}
+
+func TestModuleRedfishInfoGetDiskInventorySimpleStoragePath(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","SimpleStorage":{"@odata.id":"/redfish/v1/Systems/1/SimpleStorage"}}`}
+	listCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/SimpleStorage; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[listCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/SimpleStorage/1"}]}`}
+	memberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/SimpleStorage/1; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[memberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"1","Name":"Simple Storage Controller","Devices":[{"Model":"Legacy HDD","CapacityBytes":1000000000000}]}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetDiskInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	diskResult, _ := facts["disk"].(map[string]any)
+	entries, _ := diskResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	groups, _ := pair[1].([]any)
+	group, _ := groups[0].(map[string]any)
+	if group["Controller"] != "Simple Storage Controller" {
+		t.Fatalf("group = %+v", group)
+	}
+	if _, ok := group["StorageId"]; ok {
+		t.Fatalf("SimpleStorage-path group should not have a StorageId key: %+v", group)
+	}
+	drives, _ := group["Drives"].([]any)
+	if len(drives) != 1 {
+		t.Fatalf("drives = %+v, want 1", drives)
+	}
+	drive, _ := drives[0].(map[string]any)
+	if drive["Model"] != "Legacy HDD" {
+		t.Fatalf("drive = %+v", drive)
+	}
+}
+
+func TestModuleRedfishInfoGetDiskInventoryMissingSoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetDiskInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	diskResult, _ := facts["disk"].(map[string]any)
+	if diskResult["ret"] != false {
+		t.Fatalf("disk = %+v, want ret:false (neither Storage nor SimpleStorage present)", diskResult)
+	}
+}
+
+func TestModuleRedfishInfoGetVolumeInventory(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","Storage":{"@odata.id":"/redfish/v1/Systems/1/Storage"}}`}
+	storageListCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageListCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID"}]}`}
+	storageMemberCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[storageMemberCmd] = remoteexec.Result{RC: 0, Stdout: `{"Id":"RAID","StorageControllers":[{"Name":"Embedded RAID"}],"Volumes":{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Volumes"}}`}
+	volListCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID/Volumes; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[volListCmd] = remoteexec.Result{RC: 0, Stdout: `{"Members":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Volumes/0"}]}`}
+	volCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/Storage/RAID/Volumes/0; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[volCmd] = remoteexec.Result{RC: 0, Stdout: `{"Name":"Volume 1","RAIDType":"RAID1","CapacityBytes":1000000000000,"Links":{"Drives":[{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Drives/0"},{"@odata.id":"/redfish/v1/Systems/1/Storage/RAID/Drives/1"}]},"Unrelated":"x"}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetVolumeInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	volResult, _ := facts["volume"].(map[string]any)
+	if volResult["ret"] != true {
+		t.Fatalf("volume = %+v", volResult)
+	}
+	entries, _ := volResult["entries"].([]any)
+	pair, _ := entries[0].([]any)
+	groups, _ := pair[1].([]any)
+	group, _ := groups[0].(map[string]any)
+	if group["Controller"] != "Embedded RAID" {
+		t.Fatalf("group = %+v", group)
+	}
+	vols, _ := group["Volumes"].([]any)
+	if len(vols) != 1 {
+		t.Fatalf("vols = %+v, want 1", vols)
+	}
+	vol, _ := vols[0].(map[string]any)
+	if vol["RAIDType"] != "RAID1" {
+		t.Fatalf("vol = %+v", vol)
+	}
+	if _, ok := vol["Unrelated"]; ok {
+		t.Fatalf("vol should not include unrelated properties: %+v", vol)
+	}
+	linked, _ := vol["Linked_drives"].([]any)
+	if len(linked) != 2 {
+		t.Fatalf("Linked_drives = %+v, want 2", linked)
+	}
+	d0, _ := linked[0].(map[string]any)
+	if d0["Id"] != "0" {
+		t.Fatalf("Linked_drives[0] = %+v, want Id:0", d0)
+	}
+}
+
+func TestModuleRedfishInfoGetVolumeInventorySimpleStorageOnlySoftFails(t *testing.T) {
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	sysCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com -1 Systems; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/"}`}
+	sysRawCmd := `printf '%s' '{"password":"secret","user":"admin"}' > /tmp/redfishtool-cfg.json && redfishtool -c /tmp/redfishtool-cfg.json -r https://bmc.example.com raw GET /redfish/v1/Systems/1/; rm -f /tmp/redfishtool-cfg.json`
+	conn.on[sysRawCmd] = remoteexec.Result{RC: 0, Stdout: `{"@odata.id":"/redfish/v1/Systems/1/","SimpleStorage":{"@odata.id":"/redfish/v1/Systems/1/SimpleStorage"}}`}
+	res, err := moduleRedfishInfo(context.Background(), conn, redfishArgs(map[string]any{
+		"category": []any{"Systems"}, "command": []any{"GetVolumeInventory"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v, want ok", res)
+	}
+	facts, _ := res.Extra["redfish_facts"].(map[string]any)
+	volResult, _ := facts["volume"].(map[string]any)
+	// Real get_volume_inventory has NO SimpleStorage code path at all —
+	// a SimpleStorage-only system falls through to "Storage resource
+	// not found" even though SimpleStorage itself IS present.
+	if volResult["ret"] != false {
+		t.Fatalf("volume = %+v, want ret:false (no Storage key, SimpleStorage has no volume concept)", volResult)
+	}
+}

@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	remoteexec "github.com/go-remoteexec/transport"
@@ -50,28 +51,32 @@ import (
 //     failed GET as `available: false` rather than a hard error (a
 //     genuinely graceful "is it there at all" check), reproduced here
 //     the same way.
-//   - Systems: 10 of 14 real commands. GetSystemInventory,
+//   - Systems: 13 of 14 real commands. GetSystemInventory,
 //     GetBootOverride, GetPowerRestorePolicy, GetHealthReport,
 //     GetNicInventory, GetVirtualMedia, GetCpuInventory,
-//     GetMemoryInventory, GetBiosAttributes, GetBootOrder, each reading
-//     the bare `Systems` resource (redfishtool's own --One default —
-//     the single-system case, same disclosed narrower-than-real-
-//     Ansible's-multi-system aggregation this whole sub-batch already
-//     relies on) and extracting exactly the properties their own real
-//     get_* counterpart reads — confirmed field-by-field against their
-//     own source, not guessed. Every one of these ten is real Ansible's
-//     own AGGREGATE-wrapped form (`get_multi_system_inventory`/
+//     GetMemoryInventory, GetBiosAttributes, GetBootOrder,
+//     GetStorageControllerInventory, GetDiskInventory,
+//     GetVolumeInventory, each reading the bare `Systems` resource
+//     (redfishtool's own --One default — the single-system case, same
+//     disclosed narrower-than-real-Ansible's-multi-system aggregation
+//     this whole sub-batch already relies on) and extracting exactly
+//     the properties their own real get_* counterpart reads —
+//     confirmed field-by-field against their own source, not guessed.
+//     Every one of these thirteen is real Ansible's own
+//     AGGREGATE-wrapped form (`get_multi_system_inventory`/
 //     `get_multi_boot_override`/`get_multi_power_restore_policy`/
 //     `get_multi_system_health_report`/`get_multi_nic_inventory`/
 //     `get_multi_virtualmedia`/`get_multi_cpu_inventory`/
 //     `get_multi_memory_inventory`/`get_multi_bios_attributes`/
-//     `get_multi_boot_order`, confirmed from redfish_info.py's own
-//     dispatch table — NOT the bare non-aggregate function this port's
-//     own doc comments had originally assumed), so the real output
-//     shape is TWO-level: `{"ret": bool, "entries": [({"system_uri":
-//     uri}, {...})]}` — see redfishAggregateOne's own doc comment for
-//     the real bug this fixed in an earlier increment (the outer
-//     `{"ret":.., "entries":..}` wrapper was missing entirely).
+//     `get_multi_boot_order`/`get_multi_storage_controller_inventory`/
+//     `get_multi_disk_inventory`/`get_multi_volume_inventory`,
+//     confirmed from redfish_info.py's own dispatch table — NOT the
+//     bare non-aggregate function this port's own doc comments had
+//     originally assumed), so the real output shape is TWO-level:
+//     `{"ret": bool, "entries": [({"system_uri": uri}, {...})]}` — see
+//     redfishAggregateOne's own doc comment for the real bug this
+//     fixed in an earlier increment (the outer `{"ret":..,
+//     "entries":..}` wrapper was missing entirely).
 //     GetNicInventory/GetVirtualMedia are the SAME real functions
 //     Manager's own GetManagerNicInventory/GetVirtualMedia already
 //     call (`get_multi_nic_inventory`/`get_multi_virtualmedia` take a
@@ -92,6 +97,21 @@ import (
 //     are each their own real soft failure, but aggregate()'s own
 //     source discards the inner "msg" entirely — both surface as a
 //     bare `{"ret":false,"entries":[]}`, no message.
+//     GetStorageControllerInventory/GetDiskInventory/GetVolumeInventory
+//     each read the Storage collection (GetDiskInventory/
+//     GetVolumeInventory ALSO group entries by controller name,
+//     resolved via redfishResolveControllerName — unlike
+//     GetStorageControllerInventory, which returns a flat list). Real
+//     get_disk_inventory ALSO has a SimpleStorage code path
+//     (GetVolumeInventory does not — a SimpleStorage-only system gets
+//     a real, confirmed soft failure there, since legacy SimpleStorage
+//     has no RAID-volume concept); real Ansible's own source shares
+//     one `controller_list` variable across both of GetDiskInventory's
+//     paths without resetting it, a likely-unintentional real bug this
+//     port deliberately does NOT reproduce (see
+//     redfishGetDiskInventory's own doc comment for the full
+//     reasoning) — a system exposing BOTH Storage and SimpleStorage
+//     with real populated data is genuinely rare in practice anyway.
 //   - Chassis: GetChassisInventory, GetFanInventory, GetChassisPower,
 //     GetHealthReport, each reading the bare `Chassis` resource (same
 //     --One single-chassis narrowing as Systems above) —
@@ -179,12 +199,8 @@ import (
 // resource — skips a redundant GET and uses the embedded object as-is).
 //
 // 4 more Chassis commands (GetChassisThermals, GetPsuInventory, and
-// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) and 4 more
-// Systems commands remain unwired: GetStorageControllerInventory and
-// GetDiskInventory/GetVolumeInventory (each a genuinely deep,
-// multi-level, dual-code-path traversal — Storage vs the older
-// SimpleStorage resource shape, nested controller-name resolution with
-// several real fallback cases) and GetBiosRegistries (needs a
+// HPE-specific GetHPEThermalConfig/GetHPEFanPercentMin) and 1 more
+// Systems command remain unwired: GetBiosRegistries (needs a
 // vendor-aware `Location`/`Language` lookup with real, disclosed HPE
 // iLO4/iLO5-specific workarounds this port has no hardware to verify
 // against) — a later increment of this same batch, or left
@@ -316,6 +332,24 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 						return Result{}, err
 					}
 					facts["boot_order"] = v
+				case "GetStorageControllerInventory":
+					v, err := redfishGetStorageControllerInventory(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["storage_controller"] = v
+				case "GetDiskInventory":
+					v, err := redfishGetDiskInventory(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["disk"] = v
+				case "GetVolumeInventory":
+					v, err := redfishGetVolumeInventory(ctx, conn, baseuri, username, password, systemURI)
+					if err != nil {
+						return Result{}, err
+					}
+					facts["volume"] = v
 				}
 
 			case "Chassis":
@@ -473,7 +507,8 @@ var redfishInfoCategories = map[string][]string{
 	"Systems": {
 		"GetSystemInventory", "GetBootOverride", "GetPowerRestorePolicy", "GetHealthReport",
 		"GetNicInventory", "GetVirtualMedia", "GetCpuInventory", "GetMemoryInventory",
-		"GetBiosAttributes", "GetBootOrder",
+		"GetBiosAttributes", "GetBootOrder", "GetStorageControllerInventory",
+		"GetDiskInventory", "GetVolumeInventory",
 	},
 	"Chassis":  {"GetChassisInventory", "GetFanInventory", "GetChassisPower", "GetHealthReport"},
 	"Accounts": {"ListUsers", "GetAccountServiceConfig"},
@@ -1926,6 +1961,473 @@ func redfishGetMultiBootOrder(ctx context.Context, conn remoteexec.Connection, b
 		} else {
 			entries = append(entries, map[string]any{"BootOptionReference": ref})
 		}
+	}
+	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
+}
+
+// redfishGetStorageControllerInventory reproduces real
+// get_storage_controller_inventory exactly: its own independent GET
+// of systemURI, find "Storage" (a missing key, or a Storage
+// collection with no members at all, is real
+// get_storage_controller_inventory's own single soft failure —
+// "Storage resource not found" for BOTH cases, confirmed from its own
+// source), walk each Storage member, and for each collect controllers
+// from either the modern "Controllers" sub-collection (GET it, GET
+// each member, 12-property whitelist) or the older embedded
+// "StorageControllers" list (whitelisted directly, no further GET) —
+// real Ansible checks "Controllers" FIRST, only falling back to
+// "StorageControllers" when absent, confirmed from source. Unlike
+// GetDiskInventory/GetVolumeInventory below, real
+// get_storage_controller_inventory does NOT group entries by
+// controller name — it's a flat list across every Storage member.
+func redfishGetStorageControllerInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", systemURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	link, ok := data["Storage"].(map[string]any)
+	if !ok {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Storage resource not found"}), nil
+	}
+	storageURI, _ := link["@odata.id"].(string)
+	members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", storageURI)
+	if err != nil {
+		return nil, err
+	}
+	if mr.RC != 0 || len(members) == 0 {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Storage resource not found"}), nil
+	}
+	properties := []string{
+		"CacheSummary", "FirmwareVersion", "Identifiers", "Location", "Manufacturer",
+		"Model", "Name", "Id", "PartNumber", "SerialNumber", "SpeedGbps", "Status",
+	}
+	entries := []any{}
+	for _, storageMemberURI := range members {
+		var storageData map[string]any
+		sr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &storageData, "raw", "GET", storageMemberURI)
+		if err != nil {
+			return nil, err
+		}
+		if sr.RC != 0 {
+			continue
+		}
+		if ctrlLink, ok := storageData["Controllers"].(map[string]any); ok {
+			ctrlURI, _ := ctrlLink["@odata.id"].(string)
+			ctrlMembers, cr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", ctrlURI)
+			if err != nil {
+				return nil, err
+			}
+			if cr.RC != 0 {
+				continue
+			}
+			for _, cURI := range ctrlMembers {
+				var cData map[string]any
+				cr2, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &cData, "raw", "GET", cURI)
+				if err != nil {
+					return nil, err
+				}
+				if cr2.RC != 0 {
+					continue
+				}
+				entry := map[string]any{}
+				for _, p := range properties {
+					if v, ok := cData[p]; ok {
+						entry[p] = v
+					}
+				}
+				entries = append(entries, entry)
+			}
+		} else if scList, ok := storageData["StorageControllers"].([]any); ok {
+			for _, sc := range scList {
+				scData, ok := sc.(map[string]any)
+				if !ok {
+					continue
+				}
+				entry := map[string]any{}
+				for _, p := range properties {
+					if v, ok := scData[p]; ok {
+						entry[p] = v
+					}
+				}
+				entries = append(entries, entry)
+			}
+		}
+	}
+	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
+}
+
+// redfishResolveControllerName reproduces the SHARED controller-name
+// resolution logic real get_disk_inventory and get_volume_inventory
+// each implement independently: prefer the modern "Controllers"
+// sub-collection's own first member's "Name" (falling back to
+// "Controller <Id>" when that member has no Name), else the older
+// embedded "StorageControllers" list's own first entry the same way,
+// else `defaultName`. Real get_volume_inventory already includes this
+// exact Name-or-Id fallback in both its own branches; real
+// get_disk_inventory's own "Controllers" branch does a direct,
+// unguarded `cdata["Name"]` access instead (an unhandled-KeyError-if-
+// absent edge case) — this port uses the more complete, safer
+// resolution for BOTH callers rather than reproducing that narrower
+// real crash path, a disclosed, deliberate convergence.
+func redfishResolveControllerName(ctx context.Context, conn remoteexec.Connection, baseuri, username, password string, storageData map[string]any, defaultName string) (string, error) {
+	if ctrlLink, ok := storageData["Controllers"].(map[string]any); ok {
+		ctrlURI, _ := ctrlLink["@odata.id"].(string)
+		var cColl map[string]any
+		r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &cColl, "raw", "GET", ctrlURI)
+		if err != nil {
+			return "", err
+		}
+		if r.RC != 0 {
+			return defaultName, nil
+		}
+		members, ok := cColl["Members"].([]any)
+		if !ok || len(members) == 0 {
+			return defaultName, nil
+		}
+		first, ok := members[0].(map[string]any)
+		if !ok {
+			return defaultName, nil
+		}
+		firstURI, _ := first["@odata.id"].(string)
+		var memberData map[string]any
+		mr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &memberData, "raw", "GET", firstURI)
+		if err != nil {
+			return "", err
+		}
+		if mr.RC != 0 {
+			return defaultName, nil
+		}
+		if name, ok := memberData["Name"].(string); ok {
+			return name, nil
+		}
+		id, ok := memberData["Id"].(string)
+		if !ok {
+			id = "1"
+		}
+		return "Controller " + id, nil
+	}
+	if scList, ok := storageData["StorageControllers"].([]any); ok && len(scList) > 0 {
+		sc, ok := scList[0].(map[string]any)
+		if !ok {
+			return defaultName, nil
+		}
+		if name, ok := sc["Name"].(string); ok {
+			return name, nil
+		}
+		id, ok := sc["Id"].(string)
+		if !ok {
+			id = "1"
+		}
+		return "Controller " + id, nil
+	}
+	return defaultName, nil
+}
+
+// redfishDiskDriveProperties is the 21-property whitelist real
+// get_disk_inventory itself reads for each drive, confirmed from its
+// own source. "Links" is included as a literal entry — the STORAGE
+// path (see redfishGetDiskInventory) special-cases it to extract only
+// "Volumes", while the SIMPLESTORAGE path copies it verbatim like
+// every other property, matching a real, confirmed divergence between
+// the two code paths' own source.
+var redfishDiskDriveProperties = []string{
+	"BlockSizeBytes", "CapableSpeedGbs", "CapacityBytes", "EncryptionAbility", "EncryptionStatus",
+	"FailurePredicted", "HotspareType", "Id", "Identifiers", "Links", "Manufacturer", "MediaType",
+	"Model", "Name", "PartNumber", "PhysicalLocation", "Protocol", "Revision", "RotationSpeedRPM",
+	"SerialNumber", "Status",
+}
+
+// redfishGetDiskInventory reproduces real get_disk_inventory for this
+// port's own single-system scope: its own independent GET of
+// systemURI; if NEITHER "SimpleStorage" NOR "Storage" is present, real
+// Ansible's own single soft failure ("SimpleStorage and Storage
+// resource not found" — its own real string literal spans a source
+// line-continuation with embedded whitespace this port normalizes to
+// a single space, a cosmetic-only divergence, not a behavioral one).
+//
+// Real Ansible then runs BOTH the Storage and SimpleStorage code paths
+// independently if BOTH keys are present — and, confirmed from its own
+// source, shares one `controller_list` variable across both paths
+// without resetting it between them, so a system with BOTH keys
+// present (and real member data under each) would have the
+// SimpleStorage loop re-process the Storage path's own controller
+// URIs too, calling `data["Devices"]` on a Storage-shaped resource
+// that has no such key — a real, likely-unintentional bug (an
+// unguarded KeyError) in upstream Ansible for a combination genuinely
+// rare in practice (SimpleStorage is a legacy resource type; few real
+// implementations expose both with populated data on the same
+// system). This port runs the two paths with fully independent state
+// instead, a disclosed, deliberate choice not to reproduce a crash
+// this port has no hardware combination to verify is even reachable.
+//
+// Storage path: GET the Storage collection, walk each member,
+// determine "StorageId" (that member's own "Id") and controller name
+// via redfishResolveControllerName (default "Controller 1", matching
+// real Ansible's own literal default there), then walk "Drives"
+// (embedded refs, one GET per drive) copying redfishDiskDriveProperties
+// (non-nil values only) with "Links" special-cased to extract only
+// "Volumes" as a list of @odata.id strings.
+//
+// SimpleStorage path: GET the SimpleStorage collection, walk each
+// member (its own controller name is itself, not fetched
+// separately — "Name" if present else "Controller <Id>"), copying
+// "Devices" (embedded, no further GET) with the SAME property
+// whitelist but no "Links" special-casing (a real, confirmed
+// divergence — see redfishDiskDriveProperties' own doc comment) and no
+// "StorageId" key in the resulting group (real Ansible's own
+// SimpleStorage-path result dict omits it, confirmed from source).
+func redfishGetDiskInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", systemURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	_, hasStorage := data["Storage"]
+	_, hasSimple := data["SimpleStorage"]
+	if !hasStorage && !hasSimple {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "SimpleStorage and Storage resource not found"}), nil
+	}
+	entries := []any{}
+
+	if link, ok := data["Storage"].(map[string]any); ok {
+		storageURI, _ := link["@odata.id"].(string)
+		members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", storageURI)
+		if err != nil {
+			return nil, err
+		}
+		if mr.RC == 0 {
+			for _, storageMemberURI := range members {
+				var storageData map[string]any
+				sr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &storageData, "raw", "GET", storageMemberURI)
+				if err != nil {
+					return nil, err
+				}
+				if sr.RC != 0 {
+					continue
+				}
+				storageID, _ := storageData["Id"].(string)
+				controllerName, err := redfishResolveControllerName(ctx, conn, baseuri, username, password, storageData, "Controller 1")
+				if err != nil {
+					return nil, err
+				}
+				driveResults := []any{}
+				if drives, ok := storageData["Drives"].([]any); ok {
+					for _, d := range drives {
+						dm, ok := d.(map[string]any)
+						if !ok {
+							continue
+						}
+						driveURI, _ := dm["@odata.id"].(string)
+						var driveData map[string]any
+						dr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &driveData, "raw", "GET", driveURI)
+						if err != nil {
+							return nil, err
+						}
+						if dr.RC != 0 {
+							continue
+						}
+						entry := map[string]any{}
+						if odid, ok := driveData["@odata.id"]; ok {
+							entry["RedfishURI"] = odid
+						}
+						for _, p := range redfishDiskDriveProperties {
+							if p == "Links" {
+								continue
+							}
+							if v, ok := driveData[p]; ok && v != nil {
+								entry[p] = v
+							}
+						}
+						if links, ok := driveData["Links"].(map[string]any); ok {
+							if vols, ok := links["Volumes"].([]any); ok {
+								volURIs := []any{}
+								for _, v := range vols {
+									vm, ok := v.(map[string]any)
+									if !ok {
+										continue
+									}
+									if u, ok := vm["@odata.id"]; ok {
+										volURIs = append(volURIs, u)
+									}
+								}
+								entry["Volumes"] = volURIs
+							}
+						}
+						driveResults = append(driveResults, entry)
+					}
+				}
+				entries = append(entries, map[string]any{"Controller": controllerName, "StorageId": storageID, "Drives": driveResults})
+			}
+		}
+	}
+
+	if link, ok := data["SimpleStorage"].(map[string]any); ok {
+		simpleURI, _ := link["@odata.id"].(string)
+		members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", simpleURI)
+		if err != nil {
+			return nil, err
+		}
+		if mr.RC == 0 {
+			for _, memberURI := range members {
+				var memberData map[string]any
+				mr2, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &memberData, "raw", "GET", memberURI)
+				if err != nil {
+					return nil, err
+				}
+				if mr2.RC != 0 {
+					continue
+				}
+				controllerName, ok := memberData["Name"].(string)
+				if !ok {
+					id, ok := memberData["Id"].(string)
+					if !ok {
+						id = "1"
+					}
+					controllerName = "Controller " + id
+				}
+				driveResults := []any{}
+				if devices, ok := memberData["Devices"].([]any); ok {
+					for _, dev := range devices {
+						devData, ok := dev.(map[string]any)
+						if !ok {
+							continue
+						}
+						entry := map[string]any{}
+						for _, p := range redfishDiskDriveProperties {
+							if v, ok := devData[p]; ok {
+								entry[p] = v
+							}
+						}
+						driveResults = append(driveResults, entry)
+					}
+				}
+				entries = append(entries, map[string]any{"Controller": controllerName, "Drives": driveResults})
+			}
+		}
+	}
+
+	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
+}
+
+// redfishGetVolumeInventory reproduces real get_volume_inventory for
+// this port's own single-system scope: its own independent GET of
+// systemURI; if NEITHER "SimpleStorage" NOR "Storage" is present, the
+// same soft failure GetDiskInventory uses. Unlike GetDiskInventory,
+// real get_volume_inventory has NO SimpleStorage code path at all — a
+// SimpleStorage-only system (no "Storage" key) falls through to a
+// SECOND, more specific soft failure, "Storage resource not found"
+// (confirmed from its own source's own if/else structure), since
+// legacy SimpleStorage has no RAID-volume concept to report.
+//
+// Walks the Storage collection, resolving each member's own
+// controller name via redfishResolveControllerName (default
+// "Controller <index>", 0-based — a real, confirmed difference from
+// GetDiskInventory's own literal "Controller 1" default), then — if
+// that Storage member has its own "Volumes" link — walks that
+// collection, copying the 16-property whitelist real
+// get_volume_inventory itself reads (non-nil values only) plus a
+// "Linked_drives" list built from each volume's own Links.Drives,
+// reduced to just each drive's own URI-final path segment as
+// `{"Id": ...}` (confirmed from its own `rstrip("/").split("/")[-1]`).
+func redfishGetVolumeInventory(ctx context.Context, conn remoteexec.Connection, baseuri, username, password, systemURI string) (map[string]any, error) {
+	var data map[string]any
+	r, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &data, "raw", "GET", systemURI)
+	if err != nil {
+		return nil, err
+	}
+	if r.RC != 0 {
+		return map[string]any{"ret": false, "msg": redfishtoolErrMsg(r)}, nil
+	}
+	_, hasStorage := data["Storage"]
+	_, hasSimple := data["SimpleStorage"]
+	if !hasStorage && !hasSimple {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "SimpleStorage and Storage resource not found"}), nil
+	}
+	link, ok := data["Storage"].(map[string]any)
+	if !ok {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": "Storage resource not found"}), nil
+	}
+	storageURI, _ := link["@odata.id"].(string)
+	members, mr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", storageURI)
+	if err != nil {
+		return nil, err
+	}
+	if mr.RC != 0 {
+		return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": false, "msg": redfishtoolErrMsg(mr)}), nil
+	}
+	volumeProperties := []string{
+		"Id", "Name", "RAIDType", "VolumeType", "BlockSizeBytes", "Capacity", "CapacityBytes", "CapacitySources",
+		"Encrypted", "EncryptionTypes", "Identifiers", "Operations", "OptimumIOSizeBytes", "AccessCapabilities",
+		"AllocatedPools", "Status",
+	}
+	entries := []any{}
+	for idx, storageMemberURI := range members {
+		var storageData map[string]any
+		sr, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &storageData, "raw", "GET", storageMemberURI)
+		if err != nil {
+			return nil, err
+		}
+		if sr.RC != 0 {
+			continue
+		}
+		defaultName := fmt.Sprintf("Controller %d", idx)
+		controllerName, err := redfishResolveControllerName(ctx, conn, baseuri, username, password, storageData, defaultName)
+		if err != nil {
+			return nil, err
+		}
+		volumeResults := []any{}
+		if volLink, ok := storageData["Volumes"].(map[string]any); ok {
+			volumesURI, _ := volLink["@odata.id"].(string)
+			volMembers, vr, err := redfishListCollectionMembers(ctx, conn, baseuri, username, password, "raw", "GET", volumesURI)
+			if err != nil {
+				return nil, err
+			}
+			if vr.RC == 0 {
+				for _, volumeURI := range volMembers {
+					var volumeData map[string]any
+					vr2, err := redfishtoolRunJSON(ctx, conn, baseuri, username, password, &volumeData, "raw", "GET", volumeURI)
+					if err != nil {
+						return nil, err
+					}
+					if vr2.RC != 0 {
+						continue
+					}
+					entry := map[string]any{}
+					for _, p := range volumeProperties {
+						if v, ok := volumeData[p]; ok && v != nil {
+							entry[p] = v
+						}
+					}
+					if links, ok := volumeData["Links"].(map[string]any); ok {
+						if drives, ok := links["Drives"].([]any); ok {
+							linkedDrives := []any{}
+							for _, d := range drives {
+								dm, ok := d.(map[string]any)
+								if !ok {
+									continue
+								}
+								driveLinkURI, _ := dm["@odata.id"].(string)
+								driveID := strings.TrimRight(driveLinkURI, "/")
+								if i := strings.LastIndex(driveID, "/"); i >= 0 {
+									driveID = driveID[i+1:]
+								}
+								linkedDrives = append(linkedDrives, map[string]any{"Id": driveID})
+							}
+							entry["Linked_drives"] = linkedDrives
+						}
+					}
+					volumeResults = append(volumeResults, entry)
+				}
+			}
+		}
+		entries = append(entries, map[string]any{"Controller": controllerName, "Volumes": volumeResults})
 	}
 	return redfishWrapAggregate("system_uri", systemURI, map[string]any{"ret": true, "entries": entries}), nil
 }
