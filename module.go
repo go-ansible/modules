@@ -156,7 +156,57 @@ func (r *Registry) Run(ctx context.Context, name string, conn remoteexec.Connect
 	if !ok {
 		return Fail(fmt.Sprintf("the module %s was not found", name)), nil
 	}
-	return fn(ctx, conn, args)
+	res, err := fn(ctx, conn, args)
+	if err != nil {
+		return res, err
+	}
+	return finalizeOutput(res), nil
+}
+
+// finalizeOutput reproduces what real Ansible's AnsibleModule.exit_json
+// does to every module result on its way out, rather than leaving each
+// module to remember it: a trailing newline is trimmed off stdout and
+// stderr, and a matching stdout_lines/stderr_lines is added.
+//
+// Both halves were measured against real ansible-core 2.21.4. `echo
+// hello` gives a 5-character stdout there and gave 6 here, and
+// `result.stdout_lines` — which real playbooks use constantly — did not
+// exist at all.
+//
+// The trim is exactly Python's rstrip("\r\n"): every trailing carriage
+// return and newline goes, and nothing else does. Trailing spaces and
+// tabs survive (`printf 'x  \t '` stays 5 characters) and leading
+// newlines survive (`printf '\n\nx'` stays 3), both confirmed against
+// real Ansible rather than assumed.
+func finalizeOutput(res Result) Result {
+	for _, key := range []string{"stdout", "stderr"} {
+		raw, ok := res.Extra[key]
+		if !ok {
+			continue
+		}
+		s, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		s = strings.TrimRight(s, "\r\n")
+		res = res.WithExtra(key, s)
+		res = res.WithExtra(key+"_lines", outputLines(s))
+	}
+	return res
+}
+
+// outputLines is Python's str.splitlines(): no trailing empty element, and
+// an empty string yields an empty list rather than a one-element one.
+func outputLines(s string) []any {
+	if s == "" {
+		return []any{}
+	}
+	parts := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	out := make([]any, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, p)
+	}
+	return out
 }
 
 // Default returns a Registry pre-populated with this package's built-in
