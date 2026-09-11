@@ -12,13 +12,22 @@ import (
 //
 // Args: msg (string, default "Hello world!"); var (any) — a value to
 // print by its own repr instead of a fixed message.
+// moduleDebug handles the msg: form. The var: form is resolved by the
+// playbook engine before it ever reaches here, because `var` names a
+// variable to look up and only the engine holds the host's variables —
+// real Ansible's debug is an action plugin for the same reason.
+//
+// The result carries _ansible_verbose_always, which is real Ansible's
+// own marker telling the stdout callback to print the result in full
+// even without -v. It is what makes a debug task show anything at all.
 func moduleDebug(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
-	if v, ok := args["var"]; ok {
-		return Ok(fmt.Sprint(v)).WithExtra("var", v), nil
-	}
 	msg := argString(args, "msg", "Hello world!")
-	return Ok(msg), nil
+	return Ok(msg).WithExtra(VerboseAlwaysKey, true), nil
 }
+
+// VerboseAlwaysKey marks a result a stdout callback should print in full
+// without -v. Spelled as real Ansible spells it on the wire.
+const VerboseAlwaysKey = "_ansible_verbose_always"
 
 // moduleFail implements Ansible's `fail` module: always fails with msg.
 //

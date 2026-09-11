@@ -76,14 +76,30 @@ func TestModuleDebugDefault(t *testing.T) {
 	}
 }
 
-func TestModuleDebugVar(t *testing.T) {
+// TestModuleDebugVerboseFlagAndDefault covers what this module carries
+// beyond the message itself. The var: form moved to the playbook engine:
+// `var` names a variable to look up, and real Ansible reports its VALUE
+// keyed by that name — measured against real ansible-core 2.21.4, where
+// `debug: {var: d}` yields {"d": <value>} and no msg at all. This module
+// used to echo the bare name back as msg.
+func TestModuleDebugVerboseFlagAndDefault(t *testing.T) {
 	conn := local()
-	res, err := moduleDebug(context.Background(), conn, map[string]any{"var": 42})
+	res, err := moduleDebug(context.Background(), conn, map[string]any{"msg": "hello"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Msg != "42" {
-		t.Fatalf("Msg = %q", res.Msg)
+	if v, ok := res.Extra[VerboseAlwaysKey].(bool); !ok || !v {
+		t.Errorf("%s = %#v, want true so the callback prints the result",
+			VerboseAlwaysKey, res.Extra[VerboseAlwaysKey])
+	}
+
+	// Real Ansible's own default when neither msg nor var is given.
+	res, err = moduleDebug(context.Background(), conn, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Msg != "Hello world!" {
+		t.Fatalf("default Msg = %q", res.Msg)
 	}
 }
 
