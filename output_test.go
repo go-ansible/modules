@@ -3,6 +3,7 @@ package modules
 import (
 	"context"
 	"testing"
+	"time"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -87,5 +88,45 @@ func TestRegistryRunFinalizes(t *testing.T) {
 	}
 	if lines, ok := res.Extra["stderr_lines"].([]any); !ok || len(lines) != 1 || lines[0] != "e" {
 		t.Errorf("stderr_lines = %#v", res.Extra["stderr_lines"])
+	}
+}
+
+// TestFormatDelta pins Python's str(timedelta) spelling, which is what
+// real Ansible puts in result.delta — measured there as "0:00:00.004054".
+func TestFormatDelta(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{4054 * time.Microsecond, "0:00:00.004054"},
+		{time.Second, "0:00:01"},      // no fractional part when it is zero
+		{90 * time.Second, "0:01:30"}, // minutes and seconds zero-padded
+		{3 * time.Hour, "3:00:00"},    // hours are not
+		{25 * time.Hour, "25:00:00"},  // and are not wrapped at 24
+		{0, "0:00:00"},
+		{-time.Second, "0:00:00"}, // a clock that went backwards
+	}
+	for _, c := range cases {
+		if got := formatDelta(c.d); got != c.want {
+			t.Errorf("formatDelta(%v) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}
+
+// TestWithTimingFields covers the three fields together, including that
+// the timestamps carry six-digit microseconds as real Ansible's do.
+func TestWithTimingFields(t *testing.T) {
+	start := time.Date(2026, 9, 11, 12, 55, 33, 151044000, time.UTC)
+	end := start.Add(4054 * time.Microsecond)
+	r := Ok("").withTiming(start, end)
+
+	for k, want := range map[string]string{
+		"start": "2026-09-11 12:55:33.151044",
+		"end":   "2026-09-11 12:55:33.155098",
+		"delta": "0:00:00.004054",
+	} {
+		if got := r.Extra[k]; got != want {
+			t.Errorf("%s = %#v, want %q", k, got, want)
+		}
 	}
 }
