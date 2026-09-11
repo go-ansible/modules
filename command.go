@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -29,11 +30,13 @@ func moduleCommand(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Ok(skipMsg), nil
 	}
 
+	start := time.Now()
 	res, err := conn.Exec(ctx, cmdLine, nil)
+	end := time.Now()
 	if err != nil {
 		return Result{}, err
 	}
-	return commandResult(argv, res), nil
+	return commandResult(argv, res).withTiming(start, end), nil
 }
 
 // ComposeCommandLine composes the exact shell command line the
@@ -110,11 +113,13 @@ func moduleShell(ctx context.Context, conn remoteexec.Connection, args map[strin
 		return Ok(skipMsg), nil
 	}
 
+	start := time.Now()
 	res, err := conn.Exec(ctx, full, nil)
+	end := time.Now()
 	if err != nil {
 		return Result{}, err
 	}
-	return commandResult([]string{cmdStr}, res), nil
+	return commandResult([]string{cmdStr}, res).withTiming(start, end), nil
 }
 
 func commandArgv(args map[string]any) ([]string, error) {
@@ -212,4 +217,34 @@ func tokenize(s string) []string {
 		toks = append(toks, cur.String())
 	}
 	return toks
+}
+
+// withTiming adds the start/end/delta fields real Ansible's command and
+// shell modules report, in real Ansible's own spellings: a timestamp is
+// "2006-01-02 15:04:05.000000" and delta is Python's str(timedelta).
+// A playbook that reads result.delta to time a step gets nothing without
+// them.
+func (r Result) withTiming(start, end time.Time) Result {
+	const stamp = "2006-01-02 15:04:05.000000"
+	return r.WithExtra("start", start.Format(stamp)).
+		WithExtra("end", end.Format(stamp)).
+		WithExtra("delta", formatDelta(end.Sub(start)))
+}
+
+// formatDelta renders d the way Python's str(timedelta) does — the exact
+// shape real Ansible puts in result.delta. Hours are not zero-padded,
+// minutes and seconds are, and the fractional part is six digits and is
+// omitted entirely when it is zero.
+func formatDelta(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	h := int(d / time.Hour)
+	m := int(d%time.Hour) / int(time.Minute)
+	sec := int(d%time.Minute) / int(time.Second)
+	micro := int(d%time.Second) / int(time.Microsecond)
+	if micro == 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, sec)
+	}
+	return fmt.Sprintf("%d:%02d:%02d.%06d", h, m, sec, micro)
 }
