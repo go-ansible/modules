@@ -119,7 +119,12 @@ func moduleShell(ctx context.Context, conn remoteexec.Connection, args map[strin
 	if err != nil {
 		return Result{}, err
 	}
-	return commandResult([]string{cmdStr}, res).withTiming(start, end), nil
+	// shell reports cmd as the command STRING, where command reports the
+	// argv list — measured against real ansible-core: `shell: echo four`
+	// gives "echo four", `command: echo one two` gives
+	// ["echo", "one", "two"]. This port wrapped the shell string in a
+	// one-element list.
+	return commandResult(nil, res).WithExtra("cmd", cmdStr).withTiming(start, end), nil
 }
 
 func commandArgv(args map[string]any) ([]string, error) {
@@ -136,9 +141,13 @@ func commandArgv(args map[string]any) ([]string, error) {
 func commandResult(argv []string, res remoteexec.Result) Result {
 	r := Result{Changed: true, Failed: res.RC != 0}
 	if r.Failed {
-		r.Msg = fmt.Sprintf("non-zero return code: %d", res.RC)
+		// Real Ansible's own wording. The code itself is in rc, which is
+		// why the message does not repeat it.
+		r.Msg = "The command exited with a non-zero return code."
 	}
-	r = r.WithExtra("cmd", argv)
+	if argv != nil {
+		r = r.WithExtra("cmd", argv)
+	}
 	r = r.WithExtra("stdout", res.Stdout)
 	r = r.WithExtra("stderr", res.Stderr)
 	r = r.WithExtra("rc", res.RC)
