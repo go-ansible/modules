@@ -130,3 +130,43 @@ func TestWithTimingFields(t *testing.T) {
 		}
 	}
 }
+
+// TestCommandAndShellReportCmdDifferently pins the shapes measured
+// against real ansible-core 2.21.4: command reports the argv list, shell
+// reports the command string. This port wrapped the shell string in a
+// one-element list, so `result.cmd` was ["echo four"] where real Ansible
+// gives "echo four".
+func TestCommandAndShellReportCmdDifferently(t *testing.T) {
+	ctx := context.Background()
+	conn := local()
+
+	res, err := moduleCommand(ctx, conn, map[string]any{"_raw_params": "echo one two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv, ok := res.Extra["cmd"].([]string)
+	if !ok || len(argv) != 3 || argv[0] != "echo" || argv[2] != "two" {
+		t.Errorf("command cmd = %#v, want the argv list", res.Extra["cmd"])
+	}
+
+	res, err = moduleShell(ctx, conn, map[string]any{"_raw_params": "echo four"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Extra["cmd"]; got != "echo four" {
+		t.Errorf("shell cmd = %#v, want the command string", got)
+	}
+
+	// And a failure carries real Ansible's own wording, with the code
+	// left to rc rather than repeated in the message.
+	res, err = moduleShell(ctx, conn, map[string]any{"_raw_params": "exit 3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Msg != "The command exited with a non-zero return code." {
+		t.Errorf("failure msg = %q", res.Msg)
+	}
+	if res.Extra["rc"] != 3 {
+		t.Errorf("rc = %#v, want 3", res.Extra["rc"])
+	}
+}
