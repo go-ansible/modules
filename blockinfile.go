@@ -111,6 +111,14 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 	if newContent == string(current) {
 		return Ok(path + " unchanged"), nil
 	}
+	if InCheckMode(args) {
+		// The unchanged case returned above, so this block WOULD be
+		// written. Report it with the same wording the real write does.
+		if effectiveState == "absent" {
+			return Changed(path + ": removed block"), nil
+		}
+		return Changed(path + ": inserted/updated block"), nil
+	}
 	if err := writeRemote(ctx, conn, path, []byte(newContent)); err != nil {
 		return Result{}, err
 	}

@@ -26,6 +26,20 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 	owner := argString(args, "owner", "")
 	group := argString(args, "group", "")
 
+	// Under check mode every mutation below becomes a no-op while the
+	// surrounding decisions run unchanged, so the module reports exactly
+	// what it would have done. Routing all of them through one helper is
+	// what makes that auditable: a mutation that forgot to use it would
+	// stand out, where scattered `if check` guards would not.
+	check := InCheckMode(args)
+	mutate := func(cmd string) error {
+		if check {
+			return nil
+		}
+		_, err := run(ctx, conn, cmd)
+		return err
+	}
+
 	changed := false
 
 	switch state {
@@ -37,7 +51,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 		if before == nil {
 			return Ok(path + " already absent"), nil
 		}
-		if _, err := run(ctx, conn, "rm -rf "+shellQuote(path)); err != nil {
+		if err := mutate("rm -rf " + shellQuote(path)); err != nil {
 			return Result{}, err
 		}
 		return Changed(path + " removed"), nil
@@ -48,7 +62,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 			return Result{}, err
 		}
 		if before == nil {
-			if _, err := run(ctx, conn, "mkdir -p "+shellQuote(path)); err != nil {
+			if err := mutate("mkdir -p " + shellQuote(path)); err != nil {
 				return Result{}, err
 			}
 			changed = true
@@ -61,7 +75,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 		if err != nil {
 			return Result{}, err
 		}
-		if _, err := run(ctx, conn, "touch "+shellQuote(path)); err != nil {
+		if err := mutate("touch " + shellQuote(path)); err != nil {
 			return Result{}, err
 		}
 		changed = before == nil
@@ -81,7 +95,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 				break // already the right link
 			}
 		}
-		if _, err := run(ctx, conn, "ln -sfn "+shellQuote(src)+" "+shellQuote(path)); err != nil {
+		if err := mutate("ln -sfn " + shellQuote(src) + " " + shellQuote(path)); err != nil {
 			return Result{}, err
 		}
 		changed = true
@@ -105,7 +119,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 			return Result{}, err
 		}
 		if before == nil || before.mode != *mode {
-			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(path))); err != nil {
+			if err := mutate(fmt.Sprintf("chmod %04o %s", *mode, shellQuote(path))); err != nil {
 				return Result{}, err
 			}
 			changed = true
@@ -117,7 +131,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 		if group != "" {
 			spec += ":" + group
 		}
-		if _, err := run(ctx, conn, "chown "+shellQuote(spec)+" "+shellQuote(path)); err != nil {
+		if err := mutate("chown " + shellQuote(spec) + " " + shellQuote(path)); err != nil {
 			return Result{}, err
 		}
 		// chown's own idempotency isn't probed (no portable owner/group

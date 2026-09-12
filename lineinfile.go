@@ -57,6 +57,12 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	if len(newLines) > 0 {
 		newContent += "\n"
 	}
+	// Every "unchanged" case has already returned above, so reaching here
+	// means the file WOULD be rewritten. Check mode reports that and
+	// stops short of the one write.
+	if InCheckMode(args) {
+		return Changed(path), nil
+	}
 	if err := writeRemote(ctx, conn, path, []byte(newContent)); err != nil {
 		return Result{}, err
 	}
