@@ -51,12 +51,20 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 		return Result{}, fmt.Errorf("template: rendering %q: %w", src, err)
 	}
 
+	// The template is still rendered in check mode — that is most of what
+	// a dry run is for here, since a broken template should fail the
+	// check rather than wait for the real run. Only the write is skipped.
+	check := InCheckMode(args)
+
 	changed := false
 	current, err := fetchIfExists(ctx, conn, dest)
 	if err != nil {
 		return Result{}, err
 	}
 	if current == nil || string(current) != rendered {
+		if check {
+			return Changed(dest), nil
+		}
 		if err := writeRemote(ctx, conn, dest, []byte(rendered)); err != nil {
 			return Result{}, err
 		}
@@ -69,6 +77,9 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 			return Result{}, err
 		}
 		if info == nil || info.mode != *mode {
+			if check {
+				return Changed(dest), nil
+			}
 			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(dest))); err != nil {
 				return Result{}, err
 			}

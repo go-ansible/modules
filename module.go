@@ -28,9 +28,15 @@ import (
 type Result struct {
 	Changed bool
 	Failed  bool
-	Msg     string
-	Facts   map[string]any
-	Extra   map[string]any
+
+	// Skipped marks work a module declined to do rather than failed at —
+	// today, a command it will not run because this is a dry run. The
+	// engine reports it the way it reports any other skipped task.
+	Skipped bool
+
+	Msg   string
+	Facts map[string]any
+	Extra map[string]any
 }
 
 // Ok returns a successful, unchanged result.
@@ -38,6 +44,9 @@ func Ok(msg string) Result { return Result{Msg: msg} }
 
 // Changed returns a successful, changed result.
 func Changed(msg string) Result { return Result{Changed: true, Msg: msg} }
+
+// Skipped returns a result for work the module declined to do.
+func Skipped(msg string) Result { return Result{Skipped: true, Msg: msg} }
 
 // Fail returns a failed result. Modules normally return this alongside
 // a non-nil error only when the failure is unexpected (a connection

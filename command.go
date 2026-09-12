@@ -30,6 +30,14 @@ func moduleCommand(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Ok(skipMsg), nil
 	}
 
+	if InCheckMode(args) {
+		// Real Ansible's own wording for a command it declines to run in
+		// a dry run. It reports skipped, not changed: it cannot know
+		// whether the command would have changed anything.
+		return Skipped("Command would have run if not in check mode").
+			WithExtra("cmd", argv), nil
+	}
+
 	start := time.Now()
 	res, err := conn.Exec(ctx, cmdLine, nil)
 	end := time.Now()
@@ -111,6 +119,11 @@ func moduleShell(ctx context.Context, conn remoteexec.Connection, args map[strin
 	}
 	if skip {
 		return Ok(skipMsg), nil
+	}
+
+	if InCheckMode(args) {
+		return Skipped("Command would have run if not in check mode").
+			WithExtra("cmd", cmdStr), nil
 	}
 
 	start := time.Now()

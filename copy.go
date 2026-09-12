@@ -32,12 +32,22 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 	}
 	defer cleanup()
 
+	// Check mode reports what WOULD change without changing it. Every
+	// decision below is already made by comparing current state to
+	// wanted, so a dry run answers the same question and simply does not
+	// act on the answer.
+	check := InCheckMode(args)
+
 	changed := false
 	current, err := fetchIfExists(ctx, conn, dest)
 	if err != nil {
 		return Result{}, err
 	}
 	if current == nil || !bytes.Equal(current, wantBytes) {
+		if check {
+			changed = true
+			return copyResult(dest, changed), nil
+		}
 		tmp, err := os.CreateTemp("", "go-ansible-copy-*")
 		if err != nil {
 			return Result{}, fmt.Errorf("copy: %w", err)
@@ -62,6 +72,9 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 			return Result{}, err
 		}
 		if info == nil || info.mode != *mode {
+			if check {
+				return copyResult(dest, true), nil
+			}
 			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(dest))); err != nil {
 				return Result{}, err
 			}
@@ -69,10 +82,16 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 		}
 	}
 
+	return copyResult(dest, changed), nil
+}
+
+// copyResult is the module's single exit shape, so the check-mode
+// early-returns above report exactly what the real path would.
+func copyResult(dest string, changed bool) Result {
 	if changed {
-		return Changed(dest), nil
+		return Changed(dest)
 	}
-	return Ok(dest), nil
+	return Ok(dest)
 }
 
 // copySource resolves the copy module's content, from either `content`
