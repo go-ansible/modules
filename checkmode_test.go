@@ -90,7 +90,11 @@ func TestCheckModeMakesNoChanges(t *testing.T) {
 // safe: a module nobody has ported is NOT claimed to support check mode,
 // so the engine skips it rather than running it for real.
 func TestSupportsCheckMode(t *testing.T) {
-	for _, name := range []string{"copy", "template", "command", "shell"} {
+	for _, name := range []string{"copy", "template", "command", "shell",
+		// Read-only modules change nothing either way, so claiming
+		// support is simply true — and real Ansible runs them in a check
+		// run rather than skipping them.
+		"debug", "fail", "stat", "find", "slurp"} {
 		if !SupportsCheckMode(name) {
 			t.Errorf("%s should declare check-mode support", name)
 		}
