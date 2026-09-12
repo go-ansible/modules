@@ -20,10 +20,24 @@ func InCheckMode(args map[string]any) bool {
 // module at a time safe: the default for an unported module is "do
 // nothing", never "modify anyway".
 var checkModeSupport = map[string]bool{
-	"command":  true,
-	"shell":    true,
+	// Modules that decide what they would do and then skip doing it.
 	"copy":     true,
 	"template": true,
+
+	// command and shell decline to run at all, reporting skipped.
+	"command": true,
+	"shell":   true,
+
+	// Read-only modules support a dry run for free: they change nothing
+	// whether or not check mode is on, so running them is both correct
+	// and the useful thing to do — real Ansible reports debug as "ok" in
+	// a check run, not "skipping". Anything that writes must earn its
+	// place here with an implementation and a test instead.
+	"debug": true,
+	"fail":  true,
+	"stat":  true,
+	"find":  true,
+	"slurp": true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run.
