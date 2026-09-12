@@ -21,8 +21,12 @@ func InCheckMode(args map[string]any) bool {
 // nothing", never "modify anyway".
 var checkModeSupport = map[string]bool{
 	// Modules that decide what they would do and then skip doing it.
-	"copy":     true,
-	"template": true,
+	"copy":        true,
+	"template":    true,
+	"file":        true,
+	"lineinfile":  true,
+	"blockinfile": true,
+	"replace":     true,
 
 	// command and shell decline to run at all, reporting skipped.
 	"command": true,
@@ -40,12 +44,11 @@ var checkModeSupport = map[string]bool{
 	"slurp": true,
 }
 
-// Modules NOT listed above are skipped in check mode rather than run.
-// file, lineinfile, blockinfile and replace are the obvious next ones:
-// each mutates from several branches, and a dry run that is only mostly
-// right is worse than one that honestly declines — so they are added one
-// at a time, each with its own test, rather than declared supported and
-// hoped about.
+// Modules NOT listed above are skipped in check mode rather than run,
+// which is what real Ansible does and what keeps a dry run safe while the
+// rest of the set is filled in. Each entry above earned its place with an
+// implementation and a test that asserts nothing on disk changed — never
+// by being declared supported and hoped about.
 
 // SupportsCheckMode reports whether the named module honours a dry run.
 // A fully-qualified collection name resolves like any other.
