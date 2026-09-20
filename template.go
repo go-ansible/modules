@@ -57,13 +57,19 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 	check := InCheckMode(args)
 
 	changed := false
+	// diff stays zero unless --diff asked for one; Result.WithDiff
+	// treats a zero Diff as nothing to report.
+	var diff Diff
 	current, err := fetchIfExists(ctx, conn, dest)
 	if err != nil {
 		return Result{}, err
 	}
 	if current == nil || string(current) != rendered {
+		if InDiffMode(args) {
+			diff = ContentDiff(dest, current, []byte(rendered))
+		}
 		if check {
-			return Changed(dest), nil
+			return Changed(dest).WithDiff(diff), nil
 		}
 		if err := writeRemote(ctx, conn, dest, []byte(rendered)); err != nil {
 			return Result{}, err
@@ -78,7 +84,7 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 		}
 		if info == nil || info.mode != *mode {
 			if check {
-				return Changed(dest), nil
+				return Changed(dest).WithDiff(diff), nil
 			}
 			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(dest))); err != nil {
 				return Result{}, err
@@ -88,7 +94,7 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 	}
 
 	if changed {
-		return Changed(dest), nil
+		return Changed(dest).WithDiff(diff), nil
 	}
 	return Ok(dest), nil
 }

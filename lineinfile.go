@@ -40,6 +40,10 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	if err != nil {
 		return Result{}, err
 	}
+	// Captured before the nil is replaced below: a file being created
+	// has no before side at all, which is what prints a bare
+	// "--- before" rather than claiming empty contents to compare.
+	existing := current
 	if current == nil {
 		if !create {
 			return Fail(fmt.Sprintf("%s does not exist (set create: true to allow creating it)", path)), nil
@@ -60,13 +64,17 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	// Every "unchanged" case has already returned above, so reaching here
 	// means the file WOULD be rewritten. Check mode reports that and
 	// stops short of the one write.
+	res := Changed(path)
+	if InDiffMode(args) {
+		res = res.WithDiff(ContentDiff(path, existing, []byte(newContent)))
+	}
 	if InCheckMode(args) {
-		return Changed(path), nil
+		return res, nil
 	}
 	if err := writeRemote(ctx, conn, path, []byte(newContent)); err != nil {
 		return Result{}, err
 	}
-	return Changed(path), nil
+	return res, nil
 }
 
 func applyLineinfile(lines []string, line string, re *pcre.Regexp, state string) ([]string, bool) {
