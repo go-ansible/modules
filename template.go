@@ -66,7 +66,15 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 	}
 	if current == nil || string(current) != rendered {
 		if InDiffMode(args) {
-			diff = ContentDiff(dest, current, []byte(rendered))
+			// Real Ansible renders to a temporary file and names that
+			// file as the after side, e.g.
+			// "~/.ansible/tmp/ansible-local-.../my.j2" — a path that
+			// differs between two runs on the same machine, and that
+			// this port has no equivalent of, since it renders in
+			// memory. The dest path is used instead, matching what
+			// copy with content: reports, and is the one divergence in
+			// these headers.
+			diff = ContentDiff(dest, dest, current, []byte(rendered))
 		}
 		if check {
 			return Changed(dest).WithDiff(diff), nil

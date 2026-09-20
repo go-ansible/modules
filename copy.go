@@ -49,7 +49,16 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 	}
 	if current == nil || !bytes.Equal(current, wantBytes) {
 		if InDiffMode(args) {
-			diff = ContentDiff(dest, current, wantBytes)
+			// Real Ansible names the after side by where the bytes came
+			// from: the dest path for an inline content:, the local
+			// source path for a src:.
+			afterHeader := dest
+			if _, inline := args["content"]; !inline {
+				if src := argString(args, "src", ""); src != "" {
+					afterHeader = src
+				}
+			}
+			diff = ContentDiff(dest, afterHeader, current, wantBytes)
 		}
 		if check {
 			changed = true

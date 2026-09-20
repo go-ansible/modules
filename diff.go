@@ -61,23 +61,30 @@ func (d Diff) Empty() bool {
 }
 
 // ContentDiff builds a Diff for a file whose contents are changing,
-// applying real Ansible's own binary and size checks to both sides and
-// naming each side the way real file modules do. A nil before means the
-// file did not exist yet.
+// applying real Ansible's own binary and size checks to both sides.
+// A nil before means the file did not exist yet.
 //
 // Both sides are passed in rather than read here, because a module
 // reaches its target through a Connection: the before content comes
 // from the target, which may not be this machine.
 //
-// A file that did not exist gets an empty before side AND an empty
-// before header, which is what makes a newly created file print the
-// bare "--- before" real Ansible shows — a header of `path (content)`
-// there would claim the file had contents to compare.
-func ContentDiff(path string, before, after []byte) Diff {
-	d := Diff{AfterHeader: path + " (content)"}
+// The headers are the caller's to choose because real Ansible has NO
+// single convention for them — each module names its sides its own way,
+// measured against ansible-core 2.21.4:
+//
+//	lineinfile, blockinfile  "<path> (content)" on both sides
+//	replace                  the bare path on both sides
+//	copy with content:       the bare dest path on both sides
+//	copy with src:           dest before, the SOURCE path after
+//
+// A nil before side overrides beforeHeader and leaves it empty, which is
+// what makes real Ansible print a bare "--- before" for a file that did
+// not exist: naming it would claim there were contents to compare.
+func ContentDiff(beforeHeader, afterHeader string, before, after []byte) Diff {
+	d := Diff{AfterHeader: afterHeader}
 
 	if before != nil {
-		d.BeforeHeader = path + " (content)"
+		d.BeforeHeader = beforeHeader
 		switch {
 		case int64(len(before)) > MaxDiffSize:
 			d.SrcLarger = MaxDiffSize
@@ -98,6 +105,10 @@ func ContentDiff(path string, before, after []byte) Diff {
 	}
 	return d
 }
+
+// ContentHeader is the "<path> (content)" form lineinfile and
+// blockinfile use for both of their headers.
+func ContentHeader(path string) string { return path + " (content)" }
 
 // isBinary is real Ansible's own test for content it will not diff: a
 // NUL byte anywhere, or bytes that are not valid text at all. Real
