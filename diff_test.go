@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,14 +29,14 @@ func TestInDiffMode(t *testing.T) {
 func TestContentDiffNewFile(t *testing.T) {
 	// A nil before side is a file that does not exist. Its header must
 	// stay empty, because real Ansible prints a bare "--- before" there.
-	d := ContentDiff("/tmp/new.txt", nil, []byte("one\ntwo\n"))
+	d := ContentDiff("/tmp/new.txt", "/tmp/new.txt", nil, []byte("one\ntwo\n"))
 	if d.Before != "" || d.BeforeHeader != "" {
 		t.Errorf("before side = %q / header %q, want both empty", d.Before, d.BeforeHeader)
 	}
 	if d.After != "one\ntwo\n" {
 		t.Errorf("after = %q", d.After)
 	}
-	if d.AfterHeader != "/tmp/new.txt (content)" {
+	if d.AfterHeader != "/tmp/new.txt" {
 		t.Errorf("after header = %q", d.AfterHeader)
 	}
 }
@@ -44,7 +45,7 @@ func TestContentDiffExistingEmptyFileIsNotAMissingOne(t *testing.T) {
 	// An existing but empty file has a before side to compare, so it
 	// gets a header; a missing one does not. Reading length instead of
 	// nil-ness would conflate the two.
-	d := ContentDiff("/tmp/f.txt", []byte{}, []byte("x\n"))
+	d := ContentDiff(ContentHeader("/tmp/f.txt"), ContentHeader("/tmp/f.txt"), []byte{}, []byte("x\n"))
 	if d.BeforeHeader != "/tmp/f.txt (content)" {
 		t.Errorf("an existing empty file must still name its before side, got %q", d.BeforeHeader)
 	}
@@ -52,21 +53,21 @@ func TestContentDiffExistingEmptyFileIsNotAMissingOne(t *testing.T) {
 
 func TestContentDiffBinaryAndOversize(t *testing.T) {
 	binary := []byte("text\x00more")
-	d := ContentDiff("/tmp/f.bin", binary, []byte("plain\n"))
+	d := ContentDiff("/tmp/f.bin", "/tmp/f.bin", binary, []byte("plain\n"))
 	if !d.SrcBinary || d.Before != "" {
 		t.Errorf("binary before side must be declined, got SrcBinary=%v Before=%q", d.SrcBinary, d.Before)
 	}
-	d = ContentDiff("/tmp/f.bin", []byte("plain\n"), binary)
+	d = ContentDiff("/tmp/f.bin", "/tmp/f.bin", []byte("plain\n"), binary)
 	if !d.DstBinary || d.After != "" {
 		t.Errorf("binary after side must be declined, got DstBinary=%v After=%q", d.DstBinary, d.After)
 	}
 
 	big := []byte(strings.Repeat("x", int(MaxDiffSize)+1))
-	d = ContentDiff("/tmp/big", big, []byte("small\n"))
+	d = ContentDiff("/tmp/big", "/tmp/big", big, []byte("small\n"))
 	if d.SrcLarger != MaxDiffSize || d.Before != "" {
 		t.Errorf("oversize before side must be declined, got %d / %q", d.SrcLarger, d.Before)
 	}
-	d = ContentDiff("/tmp/big", []byte("small\n"), big)
+	d = ContentDiff("/tmp/big", "/tmp/big", []byte("small\n"), big)
 	if d.DstLarger != MaxDiffSize || d.After != "" {
 		t.Errorf("oversize after side must be declined, got %d / %q", d.DstLarger, d.After)
 	}
@@ -103,7 +104,8 @@ func TestContentModulesReportDiffsOnlyWhenAsked(t *testing.T) {
 		run         modCall
 		wantBefore  string
 		wantAfter   string
-		wantNoBefre bool // a created file has no before side at all
+		wantNoBefre bool   // a created file has no before side at all
+		headerFmt   string // "%s" for a bare path, "%s (content)" otherwise
 	}{{
 		name: "copy",
 		seed: "old\n",
@@ -111,14 +113,14 @@ func TestContentModulesReportDiffsOnlyWhenAsked(t *testing.T) {
 		run: func(dir string, a map[string]any) (Result, error) {
 			return moduleCopy(ctx, conn, a)
 		},
-		wantBefore: "old\n", wantAfter: "new\n",
+		wantBefore: "old\n", wantAfter: "new\n", headerFmt: "%s",
 	}, {
 		name: "copy creating",
 		args: func(p string) map[string]any { return map[string]any{"dest": p, "content": "new\n"} },
 		run: func(dir string, a map[string]any) (Result, error) {
 			return moduleCopy(ctx, conn, a)
 		},
-		wantAfter: "new\n", wantNoBefre: true,
+		wantAfter: "new\n", wantNoBefre: true, headerFmt: "%s",
 	}, {
 		name: "lineinfile",
 		seed: "alpha\nbeta\n",
@@ -126,7 +128,7 @@ func TestContentModulesReportDiffsOnlyWhenAsked(t *testing.T) {
 		run: func(dir string, a map[string]any) (Result, error) {
 			return moduleLineinfile(ctx, conn, a)
 		},
-		wantBefore: "alpha\nbeta\n", wantAfter: "alpha\nbeta\ngamma\n",
+		wantBefore: "alpha\nbeta\n", wantAfter: "alpha\nbeta\ngamma\n", headerFmt: "%s (content)",
 	}, {
 		name: "lineinfile creating",
 		args: func(p string) map[string]any {
@@ -135,7 +137,7 @@ func TestContentModulesReportDiffsOnlyWhenAsked(t *testing.T) {
 		run: func(dir string, a map[string]any) (Result, error) {
 			return moduleLineinfile(ctx, conn, a)
 		},
-		wantAfter: "gamma\n", wantNoBefre: true,
+		wantAfter: "gamma\n", wantNoBefre: true, headerFmt: "%s (content)",
 	}, {
 		name: "replace",
 		seed: "a\nfoo\nb\n",
@@ -145,7 +147,7 @@ func TestContentModulesReportDiffsOnlyWhenAsked(t *testing.T) {
 		run: func(dir string, a map[string]any) (Result, error) {
 			return moduleReplace(ctx, conn, a)
 		},
-		wantBefore: "a\nfoo\nb\n", wantAfter: "a\nbar\nb\n",
+		wantBefore: "a\nfoo\nb\n", wantAfter: "a\nbar\nb\n", headerFmt: "%s",
 	}}
 
 	for _, tt := range tests {
@@ -193,15 +195,15 @@ func TestContentModulesReportDiffsOnlyWhenAsked(t *testing.T) {
 			if d.After != tt.wantAfter {
 				t.Errorf("after = %q, want %q", d.After, tt.wantAfter)
 			}
-			wantAfterHeader := path + " (content)"
+			wantAfterHeader := fmt.Sprintf(tt.headerFmt, path)
 			if d.AfterHeader != wantAfterHeader {
 				t.Errorf("after header = %q, want %q", d.AfterHeader, wantAfterHeader)
 			}
 			switch {
 			case tt.wantNoBefre && d.BeforeHeader != "":
 				t.Errorf("a created file must have no before header, got %q", d.BeforeHeader)
-			case !tt.wantNoBefre && d.BeforeHeader != path+" (content)":
-				t.Errorf("before header = %q, want %q", d.BeforeHeader, path+" (content)")
+			case !tt.wantNoBefre && d.BeforeHeader != fmt.Sprintf(tt.headerFmt, path):
+				t.Errorf("before header = %q, want %q", d.BeforeHeader, fmt.Sprintf(tt.headerFmt, path))
 			}
 		})
 	}
@@ -281,5 +283,36 @@ func TestBlockinfileReportsADiff(t *testing.T) {
 	}
 	if !strings.Contains(d.After, "inserted") || !strings.Contains(d.After, "BEGIN") {
 		t.Errorf("after must carry the marked block, got %q", d.After)
+	}
+}
+
+// Real Ansible names the after side by where the bytes came from. Both
+// shapes were measured from ansible-core 2.21.4 running --diff --check:
+// an inline content: names the dest, a src: names the source file.
+func TestCopyNamesTheAfterSideByItsSource(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "dest.txt")
+	src := filepath.Join(dir, "source.txt")
+	if err := os.WriteFile(dest, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("from-src\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := moduleCopy(context.Background(), local(), map[string]any{
+		"src": src, "dest": dest, DiffModeKey: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Diffs) != 1 {
+		t.Fatalf("want one diff, got %+v", res.Diffs)
+	}
+	if got := res.Diffs[0].AfterHeader; got != src {
+		t.Errorf("copy with src: after header = %q, want the source path %q", got, src)
+	}
+	if got := res.Diffs[0].BeforeHeader; got != dest {
+		t.Errorf("copy with src: before header = %q, want the dest path %q", got, dest)
 	}
 }

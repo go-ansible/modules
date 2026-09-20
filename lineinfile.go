@@ -66,7 +66,7 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	// stops short of the one write.
 	res := Changed(path)
 	if InDiffMode(args) {
-		res = res.WithDiff(ContentDiff(path, existing, []byte(newContent)))
+		res = res.WithDiff(ContentDiff(ContentHeader(path), ContentHeader(path), existing, []byte(newContent)))
 	}
 	if InCheckMode(args) {
 		return res, nil

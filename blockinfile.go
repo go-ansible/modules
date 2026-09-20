@@ -122,7 +122,7 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 		res = Changed(path + ": removed block")
 	}
 	if InDiffMode(args) {
-		res = res.WithDiff(ContentDiff(path, existing, []byte(newContent)))
+		res = res.WithDiff(ContentDiff(ContentHeader(path), ContentHeader(path), existing, []byte(newContent)))
 	}
 	if InCheckMode(args) {
 		// The unchanged case returned above, so this block WOULD be

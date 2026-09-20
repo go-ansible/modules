@@ -47,7 +47,7 @@ func moduleReplace(ctx context.Context, conn remoteexec.Connection, args map[str
 	// stops short of the one write.
 	res := Changed(path)
 	if InDiffMode(args) {
-		res = res.WithDiff(ContentDiff(path, current, []byte(updated)))
+		res = res.WithDiff(ContentDiff(path, path, current, []byte(updated)))
 	}
 	if InCheckMode(args) {
 		return res, nil
