@@ -45,11 +45,15 @@ func moduleReplace(ctx context.Context, conn remoteexec.Connection, args map[str
 	// Every "unchanged" case has already returned above, so reaching here
 	// means the file WOULD be rewritten. Check mode reports that and
 	// stops short of the one write.
+	res := Changed(path)
+	if InDiffMode(args) {
+		res = res.WithDiff(ContentDiff(path, current, []byte(updated)))
+	}
 	if InCheckMode(args) {
-		return Changed(path), nil
+		return res, nil
 	}
 	if err := writeRemote(ctx, conn, path, []byte(updated)); err != nil {
 		return Result{}, err
 	}
-	return Changed(path), nil
+	return res, nil
 }

@@ -37,6 +37,24 @@ type Result struct {
 	Msg   string
 	Facts map[string]any
 	Extra map[string]any
+
+	// Diffs is what changed, for a run started with --diff. A module
+	// fills it only when InDiffMode says the caller asked; it is a
+	// slice because real Ansible's own callback accepts a list, for a
+	// module that touches more than one file.
+	Diffs []Diff
+}
+
+// WithDiff returns a copy of r with d appended to Diffs, or r unchanged
+// when d carries nothing worth showing. Modules call it unconditionally
+// and let it decide, which keeps the diff-mode test in one place.
+func (r Result) WithDiff(d Diff) Result {
+	if d.Empty() {
+		return r
+	}
+	out := r
+	out.Diffs = append(append([]Diff(nil), r.Diffs...), d)
+	return out
 }
 
 // Ok returns a successful, unchanged result.

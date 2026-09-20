@@ -63,6 +63,12 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 	if err != nil {
 		return Result{}, err
 	}
+	// Captured before the nil is replaced below, so a file being created
+	// keeps a nil before side — which is what prints a bare
+	// "--- before" rather than claiming empty contents to compare. An
+	// existing but empty file is NOT the same thing, and reading the
+	// length instead of the nil-ness would conflate the two.
+	existing := current
 	if current == nil {
 		if effectiveState == "absent" {
 			return Ok(path + " unchanged (does not exist)"), nil
@@ -111,21 +117,22 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 	if newContent == string(current) {
 		return Ok(path + " unchanged"), nil
 	}
+	res := Changed(path + ": inserted/updated block")
+	if effectiveState == "absent" {
+		res = Changed(path + ": removed block")
+	}
+	if InDiffMode(args) {
+		res = res.WithDiff(ContentDiff(path, existing, []byte(newContent)))
+	}
 	if InCheckMode(args) {
 		// The unchanged case returned above, so this block WOULD be
 		// written. Report it with the same wording the real write does.
-		if effectiveState == "absent" {
-			return Changed(path + ": removed block"), nil
-		}
-		return Changed(path + ": inserted/updated block"), nil
+		return res, nil
 	}
 	if err := writeRemote(ctx, conn, path, []byte(newContent)); err != nil {
 		return Result{}, err
 	}
-	if effectiveState == "absent" {
-		return Changed(path + ": removed block"), nil
-	}
-	return Changed(path + ": inserted/updated block"), nil
+	return res, nil
 }
 
 // findMarkerBlock locates an existing marked block in lines, returning

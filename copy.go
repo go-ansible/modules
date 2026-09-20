@@ -39,14 +39,21 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 	check := InCheckMode(args)
 
 	changed := false
+	// diff stays zero unless --diff asked for one; Result.WithDiff
+	// treats a zero Diff as nothing to report, so every exit below can
+	// attach it unconditionally.
+	var diff Diff
 	current, err := fetchIfExists(ctx, conn, dest)
 	if err != nil {
 		return Result{}, err
 	}
 	if current == nil || !bytes.Equal(current, wantBytes) {
+		if InDiffMode(args) {
+			diff = ContentDiff(dest, current, wantBytes)
+		}
 		if check {
 			changed = true
-			return copyResult(dest, changed), nil
+			return copyResult(dest, changed).WithDiff(diff), nil
 		}
 		tmp, err := os.CreateTemp("", "go-ansible-copy-*")
 		if err != nil {
@@ -73,7 +80,7 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 		}
 		if info == nil || info.mode != *mode {
 			if check {
-				return copyResult(dest, true), nil
+				return copyResult(dest, true).WithDiff(diff), nil
 			}
 			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(dest))); err != nil {
 				return Result{}, err
@@ -82,7 +89,7 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 		}
 	}
 
-	return copyResult(dest, changed), nil
+	return copyResult(dest, changed).WithDiff(diff), nil
 }
 
 // copyResult is the module's single exit shape, so the check-mode
