@@ -21,8 +21,26 @@ import (
 // own marker telling the stdout callback to print the result in full
 // even without -v. It is what makes a debug task show anything at all.
 func moduleDebug(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
-	msg := argString(args, "msg", "Hello world!")
-	return Ok(msg).WithExtra(VerboseAlwaysKey, true), nil
+	raw, given := args["msg"]
+	if !given {
+		raw = "Hello world!"
+	}
+
+	// Result.Msg is a string, so a msg: that is a list, a mapping, a
+	// number or a boolean cannot survive it — and stringifying one
+	// through Go's %v is not merely a type change, it is MANGLING:
+	// measured against real ansible-core, `msg: [1, 2]` printed as
+	// "[1 2]" here and [1, 2] there, and `msg: {a: 1}` printed as
+	// "map[a:1]" against {"a": 1}.
+	//
+	// So a non-string msg is carried in Extra, typed, which is what the
+	// callbacks render; Msg keeps a readable rendering for everything
+	// that only has a string to work with.
+	res := Ok(fmt.Sprintf("%v", raw)).WithExtra(VerboseAlwaysKey, true)
+	if _, isString := raw.(string); !isString {
+		res = res.WithExtra("msg", raw)
+	}
+	return res, nil
 }
 
 // VerboseAlwaysKey marks a result a stdout callback should print in full
