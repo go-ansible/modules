@@ -45,7 +45,13 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 		return Result{}, fmt.Errorf("template: reading src %q: %w", src, err)
 	}
 
-	engine := gotemplate.New()
+	// A .j2 file is rendered with plain JINJA2 string-literal
+	// semantics, not the raw ones a playbook's own expressions use.
+	// Real ansible-core 2.21 differs between the two, measured with one
+	// expression in two places: `{{ "x\ny" | length }}` is 4 inline
+	// and 3 in a file, and a file containing 'C:\Users' fails there
+	// with Jinja2's "truncated \UXXXXXXXX escape".
+	engine := gotemplate.New().JinjaStringEscapes()
 	rendered, err := engine.Render(string(raw), vars)
 	if err != nil {
 		return Result{}, fmt.Errorf("template: rendering %q: %w", src, err)

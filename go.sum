@@ -12,6 +12,8 @@ github.com/go-ansible/facts v0.1.0 h1:kYlBfikwXJrqBLMZ1ILjrksWtD1ba5zre1CjdfeWDE
 github.com/go-ansible/facts v0.1.0/go.mod h1:7aH+A+431FOxQNA90kqB8aEL0BnZ5royRPGj2wOkf3w=
 github.com/go-ansible/template v0.16.0 h1:p92sYtBuigtoNuj8gGekLQDuVRpHyUIDPx2FR8imOKs=
 github.com/go-ansible/template v0.16.0/go.mod h1:FpoXRNI4Qb5fOuoiiEyQpXb50g6Tzi0In5TYVCemVvE=
+github.com/go-ansible/template v0.17.0 h1:od4vsnBAwj+Pi32H7JFTNkZl595XcijpRT65B22enUE=
+github.com/go-ansible/template v0.17.0/go.mod h1:FpoXRNI4Qb5fOuoiiEyQpXb50g6Tzi0In5TYVCemVvE=
 github.com/go-encryptions/unixcrypt v0.1.0 h1:XWk4h9uCDd+T2hovOzgO0B2vOdJvAwi9nbOBVb3o62c=
 github.com/go-encryptions/unixcrypt v0.1.0/go.mod h1:B1dJSjz3kdxvP7cpi5xSzyxezgBijmtNCUeCKqqDd3o=
 github.com/go-logr/logr v1.4.2 h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=
