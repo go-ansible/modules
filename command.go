@@ -62,6 +62,14 @@ func moduleCommand(ctx context.Context, conn remoteexec.Connection, args map[str
 // the exact command a synchronous run would use, to wrap it instead of
 // running it directly.
 func ComposeCommandLine(ctx context.Context, conn remoteexec.Connection, module string, args map[string]any) (cmdLine string, skip bool, skipMsg string, err error) {
+	// A task's environment: precedes whatever the command turns out to
+	// be — applied here, once, rather than in each branch below.
+	defer func() {
+		if err == nil && !skip {
+			cmdLine = EnvironmentPrefix(args) + cmdLine
+		}
+	}()
+
 	switch module {
 	case "command":
 		argv, err := commandArgv(args)
