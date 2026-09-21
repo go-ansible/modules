@@ -41,6 +41,39 @@ jobs:
       - name: Test
         run: go test ./...
 
+  # The modules that drive a real external binary, driven against the real
+  # binary. iso_create / iso_customize shell out to xorriso and then read the
+  # image back with it; the terraform module runs a real plan/apply cycle.
+  # Those tests skipped on every push, so what was exercised was the argument
+  # assembly and never the tool's answer.
+  #
+  # A job of its own rather than a leg of `test`: the matrix there covers
+  # macOS, where these come from a different package manager, and neither tool
+  # is needed to prove the pure-Go paths that job exists for.
+  external-tools:
+    name: real xorriso + terraform
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: xorriso, which writes the image and reads it back
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso
+      # terraform_wrapper: false — the wrapper is a shell script that shadows
+      # the binary, and these tests exec it directly.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Test, with both real binaries required
+        env:
+          # A skip here would look exactly like a pass.
+          MODULES_REQUIRE_XORRISO: "1"
+          MODULES_REQUIRE_TERRAFORM: "1"
+        run: go test ./...
+
   arch-native:
     name: arch ${{ matrix.label }}
     runs-on: ${{ matrix.os }}

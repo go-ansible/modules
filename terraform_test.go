@@ -18,6 +18,11 @@ import (
 func requireTerraformBinary(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("terraform"); err != nil {
+		// A skipped judge reads exactly like a passing one. The lane that
+		// installs terraform sets this.
+		if os.Getenv("MODULES_REQUIRE_TERRAFORM") != "" {
+			t.Fatalf("MODULES_REQUIRE_TERRAFORM is set but terraform is not installed: %v", err)
+		}
 		t.Skip("terraform binary not found on PATH")
 	}
 }
