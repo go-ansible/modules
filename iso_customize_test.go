@@ -99,6 +99,11 @@ func TestModuleIsoCustomizeMissingArgs(t *testing.T) {
 // delete), then verify the result with `xorriso -find`.
 func TestModuleIsoCustomizeRealXorriso(t *testing.T) {
 	if _, err := exec.LookPath("xorriso"); err != nil {
+		// A skipped judge reads exactly like a passing one. The lane that
+		// installs xorriso sets this.
+		if os.Getenv("MODULES_REQUIRE_XORRISO") != "" {
+			t.Fatalf("MODULES_REQUIRE_XORRISO is set but xorriso is not installed: %v", err)
+		}
 		t.Skip("xorriso not found in PATH")
 	}
 	dir := t.TempDir()
