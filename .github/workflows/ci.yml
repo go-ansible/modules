@@ -64,7 +64,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso
       # terraform_wrapper: false — the wrapper is a shell script that shadows
       # the binary, and these tests exec it directly.
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
       - name: Test, with both real binaries required
