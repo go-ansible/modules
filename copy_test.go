@@ -106,3 +106,29 @@ func TestModuleCopySrcReadError(t *testing.T) {
 		t.Fatal("want error for unreadable src")
 	}
 }
+
+// TestCopyRejectsSrcWithContent pins the two argument errors real
+// ansible-core 2.21.4 raises, WITH its exact wording (measured, not
+// paraphrased). The mutually-exclusive case is the one that mattered:
+// this module used to accept src and content together, quietly write
+// the content, and report ok — so a playbook naming a source file
+// copied something else.
+func TestCopyRejectsSrcWithContent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"both", map[string]any{"dest": "/x", "src": "/etc/hosts", "content": "a"},
+			"src and content are mutually exclusive"},
+		{"neither", map[string]any{"dest": "/x"},
+			"src (or content) is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := copySource(tc.args)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
