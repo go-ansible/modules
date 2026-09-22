@@ -114,6 +114,19 @@ func copyResult(dest string, changed bool) Result {
 // (a literal string) or `src` (a local file to read).
 func copySource(args map[string]any) (data []byte, cleanup func(), err error) {
 	noop := func() {}
+	_, hasContent := args["content"]
+	_, hasSrc := args["src"]
+	// Real ansible-core refuses BOTH of these, with these exact
+	// messages (measured on 2.21.4) — and refusing the second one
+	// matters: giving src and content together silently used the
+	// content here and reported ok, so a playbook that names a source
+	// file copied something else entirely.
+	if hasContent && hasSrc {
+		return nil, noop, errArg("src and content are mutually exclusive")
+	}
+	if !hasContent && !hasSrc {
+		return nil, noop, errArg("src (or content) is required")
+	}
 	if v, ok := args["content"]; ok {
 		s, ok := v.(string)
 		if !ok {
@@ -123,7 +136,7 @@ func copySource(args map[string]any) (data []byte, cleanup func(), err error) {
 	}
 	src, err := requireString(args, "src")
 	if err != nil {
-		return nil, noop, errArg("copy: exactly one of content or src is required")
+		return nil, noop, errArg("src (or content) is required")
 	}
 	data, readErr := os.ReadFile(src)
 	if readErr != nil {
