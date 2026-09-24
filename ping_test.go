@@ -18,8 +18,11 @@ func TestModulePingDefault(t *testing.T) {
 	if res.Failed || res.Changed {
 		t.Fatalf("res = %+v", res)
 	}
-	if res.Msg != "pong" {
-		t.Fatalf("msg = %q", res.Msg)
+	// NO msg: real's ping returns {"changed": false, "ping": "pong"}
+	// and nothing else. This asserted one, which was this port's own
+	// addition and showed up as an extra key in `ansible -m ping`.
+	if res.Msg != "" {
+		t.Fatalf("msg = %q, want none", res.Msg)
 	}
 	if res.Extra["ping"] != "pong" {
 		t.Fatalf("ping = %v", res.Extra["ping"])
