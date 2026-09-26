@@ -49,6 +49,12 @@ type fileInfo struct {
 	size int64
 	mode uint32
 	kind fileKind
+
+	// Ownership, because real's file module reports it on every
+	// result a playbook can register: uid/gid as numbers and
+	// owner/group as names.
+	uid, gid     int
+	owner, group string
 }
 
 // statPath probes path on the target with GNU stat syntax, falling back
@@ -57,7 +63,7 @@ type fileInfo struct {
 func statPath(ctx context.Context, conn remoteexec.Connection, path string) (*fileInfo, error) {
 	q := shellQuote(path)
 	cmd := fmt.Sprintf(
-		"stat -c '%%s|%%a|%%F' %s 2>/dev/null || stat -f '%%z|%%Lp|%%HT' %s 2>/dev/null",
+		"stat -c '%%s|%%a|%%F|%%u|%%g|%%U|%%G' %s 2>/dev/null || stat -f '%%z|%%Lp|%%HT|%%u|%%g|%%Su|%%Sg' %s 2>/dev/null",
 		q, q,
 	)
 	res, err := conn.Exec(ctx, cmd, nil)
@@ -68,8 +74,8 @@ func statPath(ctx context.Context, conn remoteexec.Connection, path string) (*fi
 	if res.RC != 0 || out == "" {
 		return nil, nil // does not exist
 	}
-	parts := strings.SplitN(out, "|", 3)
-	if len(parts) != 3 {
+	parts := strings.SplitN(out, "|", 7)
+	if len(parts) < 3 {
 		return nil, fmt.Errorf("stat %s: unexpected stat output %q", path, out)
 	}
 	size, err := strconv.ParseInt(parts[0], 10, 64)
@@ -89,5 +95,14 @@ func statPath(ctx context.Context, conn remoteexec.Connection, path string) (*fi
 	case strings.Contains(t, "regular"):
 		kind = fileKindRegular
 	}
-	return &fileInfo{size: size, mode: uint32(mode), kind: kind}, nil
+	fi := &fileInfo{size: size, mode: uint32(mode), kind: kind}
+	// The ownership fields are tolerated as absent: a stat that
+	// answered only the first three is still a usable answer for
+	// every caller that existed before they were added.
+	if len(parts) == 7 {
+		fi.uid, _ = strconv.Atoi(parts[3])
+		fi.gid, _ = strconv.Atoi(parts[4])
+		fi.owner, fi.group = parts[5], parts[6]
+	}
+	return fi, nil
 }

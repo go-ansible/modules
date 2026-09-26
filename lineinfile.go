@@ -52,9 +52,13 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	}
 
 	lines := splitLines(string(current))
-	newLines, changed := applyLineinfile(lines, line, re, state)
-	if !changed {
-		return Ok(path + " unchanged"), nil
+	newLines, outcome := applyLineinfile(lines, line, re, state)
+	if !outcome.changed {
+		// Real's msg is EMPTY when nothing happened, not a sentence
+		// about the file -- and it is PRESENT and empty, not absent,
+		// which is why it goes through Extra: a bare Result{} would
+		// now omit the key entirely.
+		return Result{Extra: map[string]any{"msg": ""}}, nil
 	}
 
 	newContent := strings.Join(newLines, "\n")
@@ -64,7 +68,10 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	// Every "unchanged" case has already returned above, so reaching here
 	// means the file WOULD be rewritten. Check mode reports that and
 	// stops short of the one write.
-	res := Changed(path)
+	res := Changed(outcome.msg)
+	if outcome.removed > 0 {
+		res.Extra = map[string]any{"found": outcome.removed}
+	}
 	if InDiffMode(args) {
 		res = res.WithDiff(ContentDiff(ContentHeader(path), ContentHeader(path), existing, []byte(newContent)))
 	}
@@ -77,7 +84,19 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	return res, nil
 }
 
-func applyLineinfile(lines []string, line string, re *pcre.Regexp, state string) ([]string, bool) {
+// lineinfileOutcome is what the edit DID, because real reports it as
+// the result's msg -- "line added", "line replaced", "N line(s)
+// removed" -- rather than naming the file. A playbook that shows
+// r.msg was showing a path here.
+type lineinfileOutcome struct {
+	changed bool
+	msg     string
+	// removed is reported as "found" alongside the message, which is
+	// how a playbook learns how many lines the pattern matched.
+	removed int
+}
+
+func applyLineinfile(lines []string, line string, re *pcre.Regexp, state string) ([]string, lineinfileOutcome) {
 	matches := func(l string) bool {
 		if re != nil {
 			return re.MatchString(l)
@@ -87,32 +106,39 @@ func applyLineinfile(lines []string, line string, re *pcre.Regexp, state string)
 
 	if state == "absent" {
 		var out []string
-		removed := false
+		removed := 0
 		for _, l := range lines {
 			if matches(l) {
-				removed = true
+				removed++
 				continue
 			}
 			out = append(out, l)
 		}
-		return out, removed
+		if removed == 0 {
+			return out, lineinfileOutcome{}
+		}
+		return out, lineinfileOutcome{
+			changed: true,
+			msg:     fmt.Sprintf("%d line(s) removed", removed),
+			removed: removed,
+		}
 	}
 
 	// state == "present"
 	for i, l := range lines {
 		if matches(l) {
 			if l == line {
-				return lines, false
+				return lines, lineinfileOutcome{}
 			}
 			out := append([]string{}, lines...)
 			out[i] = line
-			return out, true
+			return out, lineinfileOutcome{changed: true, msg: "line replaced"}
 		}
 	}
 	// No matching line: append.
 	out := append([]string{}, lines...)
 	out = append(out, line)
-	return out, true
+	return out, lineinfileOutcome{changed: true, msg: "line added"}
 }
 
 func splitLines(s string) []string {

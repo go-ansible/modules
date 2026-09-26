@@ -49,12 +49,20 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 			return Result{}, err
 		}
 		if before == nil {
-			return Ok(path + " already absent"), nil
+			return Result{Extra: map[string]any{
+				"path": path, "state": "absent",
+			}}, nil
 		}
 		if err := mutate("rm -rf " + shellQuote(path)); err != nil {
 			return Result{}, err
 		}
-		return Changed(path + " removed"), nil
+		// Real reports no msg for file at all -- what a playbook
+		// registers is the path and the resulting state. This port
+		// returned the path AS the msg, so `r.msg` read back a
+		// filename where real gives "absent".
+		return Result{Changed: true, Extra: map[string]any{
+			"path": path, "state": "absent",
+		}}, nil
 
 	case "directory":
 		before, err := statPath(ctx, conn, path)
@@ -141,8 +149,53 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 		changed = true
 	}
 
-	if changed {
-		return Changed(path), nil
+	// state=touch is the one that reports the path under "dest";
+	// every other state uses "path". Measured, and a playbook reading
+	// the wrong one gets nothing.
+	pathKey := "path"
+	if state == "touch" {
+		pathKey = "dest"
 	}
-	return Ok(path), nil
+	return fileResult(ctx, conn, path, pathKey, changed)
+}
+
+// fileResult describes the path as it stands AFTER the module ran, in
+// the shape real's file module returns: no msg, and the ownership and
+// mode a playbook reads back from a registered result. This port
+// returned only changed/failed/msg, so `r.state`, `r.mode` and the
+// rest were simply absent and every reference to them failed.
+func fileResult(ctx context.Context, conn remoteexec.Connection, path, pathKey string, changed bool) (Result, error) {
+	after, err := statPath(ctx, conn, path)
+	if err != nil {
+		return Result{}, err
+	}
+	extra := map[string]any{pathKey: path}
+	if after == nil {
+		// Nothing there to describe -- a dry run that created
+		// nothing, for one. Real has a real file to stat at this
+		// point; saying only what is known beats inventing the rest.
+		extra["state"] = "absent"
+		return Result{Changed: changed, Extra: extra}, nil
+	}
+	extra["state"] = fileStateName(after)
+	extra["mode"] = fmt.Sprintf("0%o", after.mode)
+	extra["size"] = after.size
+	extra["uid"] = after.uid
+	extra["gid"] = after.gid
+	extra["owner"] = after.owner
+	extra["group"] = after.group
+	return Result{Changed: changed, Extra: extra}, nil
+}
+
+// fileStateName is real's name for what a path IS, which is not
+// always the state that was asked for: state=touch reports "file".
+func fileStateName(fi *fileInfo) string {
+	switch fi.kind {
+	case fileKindDir:
+		return "directory"
+	case fileKindSymlink:
+		return "link"
+	default:
+		return "file"
+	}
 }
