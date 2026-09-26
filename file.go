@@ -49,7 +49,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 			return Result{}, err
 		}
 		if before == nil {
-			return Result{Extra: map[string]any{
+			return Result{NoMsg: true, Extra: map[string]any{
 				"path": path, "state": "absent",
 			}}, nil
 		}
@@ -60,7 +60,7 @@ func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string
 		// registers is the path and the resulting state. This port
 		// returned the path AS the msg, so `r.msg` read back a
 		// filename where real gives "absent".
-		return Result{Changed: true, Extra: map[string]any{
+		return Result{Changed: true, NoMsg: true, Extra: map[string]any{
 			"path": path, "state": "absent",
 		}}, nil
 
@@ -175,7 +175,7 @@ func fileResult(ctx context.Context, conn remoteexec.Connection, path, pathKey s
 		// nothing, for one. Real has a real file to stat at this
 		// point; saying only what is known beats inventing the rest.
 		extra["state"] = "absent"
-		return Result{Changed: changed, Extra: extra}, nil
+		return Result{Changed: changed, NoMsg: true, Extra: extra}, nil
 	}
 	extra["state"] = fileStateName(after)
 	extra["mode"] = fmt.Sprintf("0%o", after.mode)
@@ -184,7 +184,7 @@ func fileResult(ctx context.Context, conn remoteexec.Connection, path, pathKey s
 	extra["gid"] = after.gid
 	extra["owner"] = after.owner
 	extra["group"] = after.group
-	return Result{Changed: changed, Extra: extra}, nil
+	return Result{Changed: changed, NoMsg: true, Extra: extra}, nil
 }
 
 // fileStateName is real's name for what a path IS, which is not

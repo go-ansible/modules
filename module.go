@@ -34,7 +34,18 @@ type Result struct {
 	// engine reports it the way it reports any other skipped task.
 	Skipped bool
 
-	Msg   string
+	Msg string
+
+	// NoMsg says this module's result carries NO "msg" key at all,
+	// which is not the same as an empty one. Real's `file` returns
+	// state/mode/owner and no message, so `r.msg` there is an
+	// UNDEFINED variable; real's `command` returns an empty message,
+	// so `r.msg` is "". A port that always writes the key is lenient
+	// where real raises, and one that omits it whenever it is empty
+	// breaks command -- measured, both ways round. So the module that
+	// omits it says so.
+	NoMsg bool
+
 	Facts map[string]any
 	Extra map[string]any
 
