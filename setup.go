@@ -25,13 +25,17 @@ import (
 //
 // Args: fact_path, filter, gather_subset (accepted for shape-
 // compatibility with real ansible.builtin.setup's argument spec, but
-// NOT implemented — this port's facts.Gather always collects its own
+// fact_path IS implemented: the directory's *.fact files come back as
+// ansible_local, by real's own rules. filter and gather_subset are
+// NOT — this port's facts.Gather always collects its own
 // fixed, portable subset and has no filtering, subsetting, or
 // local-facts-directory support; passing any of these arguments is a
 // silent no-op, not an error, since real Ansible callers frequently
 // pass e.g. gather_subset even when every fact is wanted).
 func moduleSetup(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
-	gathered, err := facts.Gather(ctx, conn)
+	gathered, err := facts.GatherWith(ctx, conn, facts.Options{
+		FactPath: argString(args, "fact_path", ""),
+	})
 	if err != nil {
 		return Result{}, err
 	}
