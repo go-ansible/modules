@@ -35,17 +35,27 @@ func moduleReplace(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Result{}, err
 	}
 	if current == nil {
-		return Fail(fmt.Sprintf("%s does not exist", path)), nil
+		// Real's own wording, space before the bang included, and its
+		// own rc. Measured: msg "Path <p> does not exist !", rc 257.
+		return Fail(fmt.Sprintf("Path %s does not exist !", path)).
+			WithExtra("rc", 257), nil
 	}
 
+	// Real reports HOW MANY replacements it made, so the count is what
+	// it substitutes with -- not a plain ReplaceAll.
+	count := len(re.FindAllString(string(current), -1))
 	updated := re.ReplaceAllString(string(current), replacement)
 	if updated == string(current) {
-		return Ok(path + " unchanged"), nil
+		// Measured: an unchanged replace reports an EMPTY msg, and rc 0
+		// all the same. Real's keys here are changed, failed, msg, rc.
+		return Ok("").WithExtra("rc", 0), nil
 	}
 	// Every "unchanged" case has already returned above, so reaching here
 	// means the file WOULD be rewritten. Check mode reports that and
 	// stops short of the one write.
-	res := Changed(path)
+	// "1 replacements made" -- real does not singularise, and matching
+	// it means not singularising either.
+	res := Changed(fmt.Sprintf("%d replacements made", count)).WithExtra("rc", 0)
 	if InDiffMode(args) {
 		res = res.WithDiff(ContentDiff(path, path, current, []byte(updated)))
 	}
