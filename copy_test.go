@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -130,5 +132,71 @@ func TestCopyRejectsSrcWithContent(t *testing.T) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// A new file gets the mode the umask implies, not the 0600 of the
+// staging file. Measured against real: copy with no mode: produces 0644
+// under the usual umask 022, where this port produced 0600. An existing
+// file keeps whatever mode it had -- also measured, on both sides -- so
+// a write must not reset it.
+func TestCopyNewFileTakesTheUmaskDefault(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	conn := local()
+
+	fresh := filepath.Join(dir, "fresh.txt")
+	if _, err := moduleCopy(ctx, conn, map[string]any{
+		"content": "x\n", "dest": fresh,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0666 &^ umask. The test reads the umask the same way the module
+	// does rather than hard-coding 0644, so it holds under any umask.
+	res, err := conn.Exec(ctx, "umask", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mask, err := strconv.ParseUint(strings.TrimSpace(res.Stdout), 8, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := os.FileMode(0o666 & ^uint32(mask))
+	if fi.Mode().Perm() != want {
+		t.Errorf("new file mode = %04o, want %04o", fi.Mode().Perm(), want)
+	}
+
+	// An explicit mode still wins.
+	explicit := filepath.Join(dir, "explicit.txt")
+	if _, err := moduleCopy(ctx, conn, map[string]any{
+		"content": "x\n", "dest": explicit, "mode": "0755",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err = os.Stat(explicit); err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o755 {
+		t.Errorf("explicit mode = %04o, want 0755", fi.Mode().Perm())
+	}
+
+	// And rewriting an existing file leaves its mode alone.
+	if err := os.Chmod(fresh, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := moduleCopy(ctx, conn, map[string]any{
+		"content": "different\n", "dest": fresh,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err = os.Stat(fresh); err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o640 {
+		t.Errorf("rewritten file mode = %04o, want the 0640 it had", fi.Mode().Perm())
 	}
 }
