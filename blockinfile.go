@@ -71,7 +71,7 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 	existing := current
 	if current == nil {
 		if effectiveState == "absent" {
-			return Ok(path + " unchanged (does not exist)"), nil
+			return Ok(""), nil
 		}
 		if !create {
 			return Fail(fmt.Sprintf("%s does not exist (set create: true to allow creating it)", path)), nil
@@ -115,12 +115,19 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 		newContent += "\n"
 	}
 	if newContent == string(current) {
-		return Ok(path + " unchanged"), nil
+		return Ok(""), nil
 	}
-	res := Changed(path + ": inserted/updated block")
-	if effectiveState == "absent" {
-		res = Changed(path + ": removed block")
+	// Real's own wordings, measured: a file it had to create says so,
+	// and otherwise it says what it did to the block. None of them name
+	// the path -- this port put the path in every one.
+	msg := "Block inserted"
+	switch {
+	case effectiveState == "absent":
+		msg = "Block removed"
+	case existing == nil:
+		msg = "File created"
 	}
+	res := Changed(msg)
 	if InDiffMode(args) {
 		res = res.WithDiff(ContentDiff(ContentHeader(path), ContentHeader(path), existing, []byte(newContent)))
 	}

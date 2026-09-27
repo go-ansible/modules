@@ -20,7 +20,11 @@ func TestModuleIniFileAddOptionNewSection(t *testing.T) {
 		t.Fatal("want changed")
 	}
 	data, _ := os.ReadFile(f)
-	want := "[drinks]\nfav = lemonade\n"
+	// The leading blank line is real's: a file ini_file CREATES begins
+	// with one before the first section. Measured against ansible-core
+	// 2.21.4; these expectations previously pinned this port's own
+	// output, which had none.
+	want := "\n[drinks]\nfav = lemonade\n"
 	if string(data) != want {
 		t.Fatalf("content = %q, want %q", data, want)
 	}
@@ -73,7 +77,7 @@ func TestModuleIniFileNonExclusiveAddsMultipleValues(t *testing.T) {
 		t.Fatal("want changed")
 	}
 	data, _ := os.ReadFile(f)
-	want := "[drinks]\nbeverage = coke\nbeverage = pepsi\n"
+	want := "\n[drinks]\nbeverage = coke\nbeverage = pepsi\n"
 	if string(data) != want {
 		t.Fatalf("content = %q, want %q", data, want)
 	}
@@ -92,7 +96,7 @@ func TestModuleIniFileOptionOutsideSection(t *testing.T) {
 		t.Fatal("want changed")
 	}
 	data, _ := os.ReadFile(f)
-	if string(data) != "beverage = lemon juice\n" {
+	if string(data) != "\nbeverage = lemon juice\n" {
 		t.Fatalf("content = %q", data)
 	}
 }
@@ -168,7 +172,7 @@ func TestModuleIniFileNoExtraSpaces(t *testing.T) {
 		t.Fatal("want changed")
 	}
 	data, _ := os.ReadFile(f)
-	if string(data) != "x=y\n" {
+	if string(data) != "\nx=y\n" {
 		t.Fatalf("content = %q", data)
 	}
 }
@@ -203,7 +207,7 @@ func TestModuleIniFileAllowNoValue(t *testing.T) {
 		t.Fatal("want changed")
 	}
 	data, _ := os.ReadFile(f)
-	if string(data) != "flag\n" {
+	if string(data) != "\nflag\n" {
 		t.Fatalf("content = %q", data)
 	}
 }

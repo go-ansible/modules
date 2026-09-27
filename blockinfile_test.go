@@ -334,3 +334,61 @@ func TestFindMarkerBlockNoEnd(t *testing.T) {
 		t.Fatalf("begin=%d end=%d, want -1,-1", begin, end)
 	}
 }
+
+// Real's own wordings, measured against ansible-core 2.21.4. None of
+// them names the path; this port put the path in every one.
+//
+//	created the file   File created
+//	inserted a block   Block inserted
+//	removed a block    Block removed
+//	nothing changed    (empty)
+func TestModuleBlockinfileMessages(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	conn := local()
+
+	// A file it has to create.
+	fresh := filepath.Join(dir, "fresh.txt")
+	res, err := moduleBlockinfile(ctx, conn, map[string]any{
+		"path": fresh, "block": "x", "create": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Msg != "File created" {
+		t.Errorf("creating: msg = %q, want %q", res.Msg, "File created")
+	}
+
+	// An existing file.
+	existing := filepath.Join(dir, "existing.txt")
+	if err := os.WriteFile(existing, []byte("alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err = moduleBlockinfile(ctx, conn, map[string]any{"path": existing, "block": "one\ntwo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Msg != "Block inserted" {
+		t.Errorf("inserting: msg = %q, want %q", res.Msg, "Block inserted")
+	}
+
+	// Running again changes nothing, and says nothing.
+	res, err = moduleBlockinfile(ctx, conn, map[string]any{"path": existing, "block": "one\ntwo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changed || res.Msg != "" {
+		t.Errorf("unchanged: changed=%v msg=%q, want false and empty", res.Changed, res.Msg)
+	}
+
+	// And removing it.
+	res, err = moduleBlockinfile(ctx, conn, map[string]any{
+		"path": existing, "block": "", "state": "absent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Msg != "Block removed" {
+		t.Errorf("removing: msg = %q, want %q", res.Msg, "Block removed")
+	}
+}
