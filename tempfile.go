@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	remoteexec "github.com/go-remoteexec/transport"
@@ -37,7 +38,25 @@ func moduleTempfile(ctx context.Context, conn remoteexec.Connection, args map[st
 	if err != nil {
 		return Result{}, err
 	}
-	return Changed(path).WithExtra("path", path).WithExtra("state", state), nil
+	// Real reports the new file's ownership and mode alongside the
+	// path, and no msg at all. Measured keys: changed, failed, gid,
+	// group, mode, owner, path, size, state, uid -- with mode a STRING
+	// ("0600" for a file, "0700" for a directory) and size an int.
+	res := Changed("").WithExtra("path", path).WithExtra("state", state)
+	res.NoMsg = true
+	fi, err := statPath(ctx, conn, path)
+	if err != nil {
+		return Result{}, err
+	}
+	if fi != nil {
+		res = res.WithExtra("mode", fmt.Sprintf("%04o", fi.mode)).
+			WithExtra("size", fi.size).
+			WithExtra("uid", fi.uid).
+			WithExtra("gid", fi.gid).
+			WithExtra("owner", fi.owner).
+			WithExtra("group", fi.group)
+	}
+	return res, nil
 }
 
 // tempfileCmd builds the mktemp invocation for moduleTempfile,
