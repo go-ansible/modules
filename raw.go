@@ -38,5 +38,33 @@ func moduleRaw(ctx context.Context, conn remoteexec.Connection, args map[string]
 	if err != nil {
 		return Result{}, err
 	}
-	return commandResult([]string{cmdStr}, res), nil
+	return rawResult(res), nil
+}
+
+// rawResult is the result shape raw and script share, which is NOT
+// command's. Measured against real ansible-core 2.21.4:
+//
+//	success: changed, failed, rc, stdout, stdout_lines, stderr,
+//	         stderr_lines
+//	failure: the same plus msg and exception
+//
+// So there is no "cmd" key, no timing (delta/end/start), and no "msg"
+// at all unless the command failed -- where the wording is its own,
+// "non-zero return code", and not command's "The command exited with a
+// non-zero return code."
+//
+// The "exception" key a failure also carries is NOT reproduced: in real
+// it holds a Python traceback, and this port has none to put there.
+// Inventing one would be worse than its absence.
+func rawResult(res remoteexec.Result) Result {
+	r := Result{Changed: true, Failed: res.RC != 0}
+	if r.Failed {
+		r.Msg = "non-zero return code"
+	} else {
+		r.NoMsg = true
+	}
+	r = r.WithExtra("stdout", res.Stdout)
+	r = r.WithExtra("stderr", res.Stderr)
+	r = r.WithExtra("rc", res.RC)
+	return r
 }

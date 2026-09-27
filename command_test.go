@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	remoteexec "github.com/go-remoteexec/transport"
@@ -162,5 +163,50 @@ func TestTokenize(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("tokenize[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// chdir must behave like the process-level chdir real performs, not
+// like a shell's `cd`: a plain `cd` keeps the LOGICAL path, so a
+// following `pwd` reports the symlink it was given rather than the
+// directory it landed in.
+//
+// Measured against real on macOS, where /tmp is a symlink:
+// `shell: chdir=/tmp pwd` prints /private/tmp. This builds its own
+// symlink so the same property is checked wherever the tests run.
+func TestChdirLandsOnThePhysicalDirectory(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(real, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(real, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, mod := range []struct {
+		name string
+		fn   func(context.Context, remoteexec.Connection, map[string]any) (Result, error)
+	}{
+		{"command", moduleCommand},
+		{"shell", moduleShell},
+	} {
+		t.Run(mod.name, func(t *testing.T) {
+			res, err := mod.fn(context.Background(), local(), map[string]any{
+				"cmd": "pwd", "chdir": link,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := strings.TrimSpace(res.Extra["stdout"].(string))
+			if got != target {
+				t.Errorf("pwd = %q, want the physical directory %q (a plain `cd` would report %q)",
+					got, target, link)
+			}
+		})
 	}
 }
