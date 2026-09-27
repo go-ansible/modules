@@ -18,22 +18,18 @@ func moduleStat(ctx context.Context, conn remoteexec.Connection, args map[string
 	if err != nil {
 		return Result{}, err
 	}
-	info, err := statPath(ctx, conn, path)
+	// Real's own defaults: it does NOT follow a symlink unless asked,
+	// and it does compute the checksum and the mime type unless asked
+	// not to.
+	dict, err := statDict(ctx, conn, path, statOptions{
+		Follow:      argBool(args, "follow", false),
+		GetChecksum: argBool(args, "get_checksum", true),
+		GetMime:     argBool(args, "get_mime", true),
+	})
 	if err != nil {
 		return Result{}, err
 	}
-	if info == nil {
-		return Ok("").WithExtra("stat", map[string]any{"exists": false}), nil
-	}
-	return Ok("").WithExtra("stat", map[string]any{
-		"exists": true,
-		"size":   info.size,
-		"mode":   fmt.Sprintf("%04o", info.mode),
-		"isdir":  info.kind == fileKindDir,
-		"islnk":  info.kind == fileKindSymlink,
-		"isreg":  info.kind == fileKindRegular,
-		"path":   path,
-	}), nil
+	return Ok("").WithExtra("stat", dict), nil
 }
 
 type fileKind int

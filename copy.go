@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -64,6 +66,9 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 			changed = true
 			return copyResult(dest, changed).WithDiff(diff), nil
 		}
+		// Whether this is a NEW file decides its mode below, so it is
+		// read before the write rather than after.
+		isNew := current == nil
 		tmp, err := os.CreateTemp("", "go-ansible-copy-*")
 		if err != nil {
 			return Result{}, fmt.Errorf("copy: %w", err)
@@ -78,6 +83,18 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 
 		if err := conn.Put(ctx, tmpPath, dest, remoteexec.PutOptions{MkdirParents: true}); err != nil {
 			return Result{}, fmt.Errorf("copy: %w", err)
+		}
+		// A NEW file must end up with the mode the target's umask
+		// implies, which is what real produces. The staging file
+		// os.CreateTemp makes is always 0600 and Put carries that
+		// across, so a copy: with no mode: created a 0600 file where
+		// real creates 0644. An EXISTING file keeps the mode it had --
+		// measured on both sides -- so this applies only to a new one,
+		// and an explicit mode: below overrides it either way.
+		if isNew && mode == nil {
+			if err := applyUmaskDefault(ctx, conn, dest); err != nil {
+				return Result{}, err
+			}
 		}
 		changed = true
 	}
@@ -167,4 +184,26 @@ func fetchIfExists(ctx context.Context, conn remoteexec.Connection, path string)
 		return nil, fmt.Errorf("fetching %s: %w", path, err)
 	}
 	return os.ReadFile(tmpPath)
+}
+
+// applyUmaskDefault sets path to the mode a freshly created file would
+// have had: 0666 masked by the TARGET's umask, which is where the file
+// lives. Real derives the same value from the umask of the process it
+// runs the module with, so asking the target's shell is the faithful
+// question rather than reading this process's own umask.
+func applyUmaskDefault(ctx context.Context, conn remoteexec.Connection, path string) error {
+	res, err := conn.Exec(ctx, "umask", nil)
+	if err != nil {
+		return fmt.Errorf("copy: reading the umask: %w", err)
+	}
+	mask, perr := strconv.ParseUint(strings.TrimSpace(res.Stdout), 8, 32)
+	if perr != nil {
+		// A shell that would not say: 022 is the near-universal default,
+		// and a wrong guess here only mis-sets a mode the caller did not
+		// specify.
+		mask = 0o022
+	}
+	want := uint32(0o666) & ^uint32(mask)
+	_, err = run(ctx, conn, fmt.Sprintf("chmod %04o %s", want, shellQuote(path)))
+	return err
 }
