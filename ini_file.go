@@ -91,7 +91,7 @@ func moduleIniFile(ctx context.Context, conn remoteexec.Connection, args map[str
 	}
 
 	if !changed {
-		return Ok(path + " unchanged"), nil
+		return Ok(""), nil
 	}
 
 	if backup && existed {
@@ -104,10 +104,31 @@ func moduleIniFile(ctx context.Context, conn remoteexec.Connection, args map[str
 	if len(newLines) > 0 {
 		newContent += "\n"
 	}
+	// A file real CREATES begins with a blank line before the first
+	// section -- measured: "\n[s]\nk = v\n" for a new file, and no
+	// leading blank when a section is added to one that already existed.
+	if !existed && newContent != "" && !strings.HasPrefix(newContent, "\n") {
+		newContent = "\n" + newContent
+	}
 	if err := writeRemote(ctx, conn, path, []byte(newContent)); err != nil {
 		return Result{}, err
 	}
-	return Changed(path), nil
+	// Real reports the file it wrote, not just that it wrote one: its
+	// path and state plus the ownership and mode. Measured key set:
+	// changed, diff, failed, gid, group, mode, msg, owner, path, size,
+	// state, uid.
+	out := Changed("")
+	out.NoMsg = true
+	out = out.WithExtra("path", path).WithExtra("state", "file")
+	if fi, serr := statPath(ctx, conn, path); serr == nil && fi != nil {
+		out = out.WithExtra("mode", fmt.Sprintf("%04o", fi.mode)).
+			WithExtra("size", fi.size).
+			WithExtra("uid", fi.uid).
+			WithExtra("gid", fi.gid).
+			WithExtra("owner", fi.owner).
+			WithExtra("group", fi.group)
+	}
+	return out, nil
 }
 
 // iniFileRequirePath resolves the `path` argument, falling back to its
