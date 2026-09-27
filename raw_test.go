@@ -55,3 +55,46 @@ func TestModuleRawMissingCmd(t *testing.T) {
 		t.Fatal("want error")
 	}
 }
+
+// Measured from real ansible-core 2.21.4: raw and script share a result
+// shape that is NOT command's.
+//
+//	command/shell: changed cmd delta end failed msg rc start
+//	               stderr stderr_lines stdout stdout_lines
+//	raw/script:    changed failed rc stderr stderr_lines stdout
+//	               stdout_lines   (+ msg and exception on failure)
+func TestRawResultShape(t *testing.T) {
+	ok := rawResult(remoteexec.Result{RC: 0, Stdout: "out", Stderr: ""})
+	if ok.Failed {
+		t.Error("rc 0 reported as failed")
+	}
+	if !ok.NoMsg {
+		t.Error("a successful raw carries a msg key; real has none")
+	}
+	if _, has := ok.Extra["cmd"]; has {
+		t.Error("raw reported a cmd key; real has none")
+	}
+	for _, k := range []string{"delta", "end", "start"} {
+		if _, has := ok.Extra[k]; has {
+			t.Errorf("raw reported %q; real has no timing keys", k)
+		}
+	}
+	for _, k := range []string{"stdout", "stderr", "rc"} {
+		if _, has := ok.Extra[k]; !has {
+			t.Errorf("raw did not report %q", k)
+		}
+	}
+
+	bad := rawResult(remoteexec.Result{RC: 5})
+	if !bad.Failed {
+		t.Error("rc 5 not reported as failed")
+	}
+	if bad.NoMsg {
+		t.Error("a failing raw has no msg; real reports one")
+	}
+	// Real's own wording, and NOT command's "The command exited with a
+	// non-zero return code."
+	if bad.Msg != "non-zero return code" {
+		t.Errorf("msg = %q, want %q", bad.Msg, "non-zero return code")
+	}
+}

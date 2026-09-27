@@ -86,8 +86,13 @@ func ComposeCommandLine(ctx context.Context, conn remoteexec.Connection, module 
 			quoted[i] = shellQuote(a)
 		}
 		cmdLine := strings.Join(quoted, " ")
+		// -P, because real chdirs the PROCESS (os.chdir) rather than
+		// asking a shell to cd: a plain `cd` keeps the LOGICAL path, so
+		// `shell: chdir=/tmp pwd` printed /tmp where real prints
+		// /private/tmp. -P is what makes a shell cd behave like the
+		// process-level chdir real performs.
 		if chdir := argString(args, "chdir", ""); chdir != "" {
-			cmdLine = "cd " + shellQuote(chdir) + " && " + cmdLine
+			cmdLine = "cd -P " + shellQuote(chdir) + " && " + cmdLine
 		}
 		return cmdLine, false, "", nil
 	case "shell":
@@ -102,7 +107,7 @@ func ComposeCommandLine(ctx context.Context, conn remoteexec.Connection, module 
 		}
 		full := cmdStr
 		if chdir := argString(args, "chdir", ""); chdir != "" {
-			full = "cd " + shellQuote(chdir) + " && " + cmdStr
+			full = "cd -P " + shellQuote(chdir) + " && " + cmdStr
 		}
 		return full, false, "", nil
 	default:

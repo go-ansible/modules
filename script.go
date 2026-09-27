@@ -70,5 +70,6 @@ func moduleScript(ctx context.Context, conn remoteexec.Connection, args map[stri
 	}
 	_ = conn.Remove(ctx, remotePath) // best-effort cleanup; see doc comment
 
-	return commandResult([]string{localPath}, res), nil
+	// script reports raw's shape, not command's -- see rawResult.
+	return rawResult(res), nil
 }
