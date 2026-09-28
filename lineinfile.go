@@ -58,7 +58,13 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 		// about the file -- and it is PRESENT and empty, not absent,
 		// which is why it goes through Extra: a bare Result{} would
 		// now omit the key entirely.
-		return Result{Extra: map[string]any{"msg": ""}}, nil
+		// Real's unchanged lineinfile still carries backup and diff --
+		// measured: backup, changed, diff, failed, msg.
+		return Result{Extra: map[string]any{
+			"msg":    "",
+			"backup": "",
+			"diff":   fileDiffKey(path, "", ""),
+		}}, nil
 	}
 
 	newContent := strings.Join(newLines, "\n")
@@ -72,6 +78,10 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	if outcome.removed > 0 {
 		res.Extra = map[string]any{"found": outcome.removed}
 	}
+	// The diff RESULT key, and the backup key real reports whether or
+	// not a backup was asked for: an empty string when it was not.
+	before, after := diffContent(InDiffMode(args), existing, []byte(newContent))
+	res = res.WithExtra("diff", fileDiffKey(path, before, after)).WithExtra("backup", "")
 	if InDiffMode(args) {
 		res = res.WithDiff(ContentDiff(ContentHeader(path), ContentHeader(path), existing, []byte(newContent)))
 	}
