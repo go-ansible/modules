@@ -3,10 +3,10 @@ module github.com/go-ansible/modules
 go 1.26.4
 
 require (
-	github.com/go-ansible/facts v0.15.0
-	github.com/go-ansible/template v0.18.0
+	github.com/go-ansible/facts v0.16.0
+	github.com/go-ansible/template v0.30.0
 	github.com/go-regexp/engine v0.1.3
-	github.com/go-remoteexec/transport v0.1.7
+	github.com/go-remoteexec/transport v0.1.8
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -18,7 +18,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/nikolalohinski/gonja/v2 v2.9.0 // indirect
+	github.com/nikolalohinski/gonja/v2 v2.9.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
