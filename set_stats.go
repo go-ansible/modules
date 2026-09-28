@@ -40,6 +40,20 @@ func moduleSetStats(ctx context.Context, conn remoteexec.Connection, args map[st
 	if !ok {
 		return Result{}, errArg("set_stats: data must be a dictionary, got %T", v)
 	}
-	return Ok("stats recorded (not aggregated across tasks by this port; see moduleSetStats's doc comment)").
-		WithExtra("set_stats", data), nil
+	// Real reports the data under ANSIBLE_STATS, wrapped with the two
+	// options that decide how it is aggregated, and carries no msg at
+	// all -- measured: keys ansible_stats, changed, failed, and a value
+	// of {'data': {...}, 'per_host': False, 'aggregate': True}.
+	//
+	// This port reported it under "set_stats" with a msg explaining
+	// itself, so a playbook reading result.ansible_stats found nothing
+	// and one reading result.set_stats read something real never
+	// produces.
+	out := Ok("").WithExtra("ansible_stats", map[string]any{
+		"data":      data,
+		"per_host":  argBool(args, "per_host", false),
+		"aggregate": argBool(args, "aggregate", true),
+	})
+	out.NoMsg = true
+	return out, nil
 }

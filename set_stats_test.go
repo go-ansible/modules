@@ -16,7 +16,26 @@ func TestModuleSetStats(t *testing.T) {
 	if res.Failed || res.Changed {
 		t.Fatalf("res = %+v", res)
 	}
-	stats := res.Extra["set_stats"].(map[string]any)
+	// Real reports it under ansible_stats, wrapped with the two options
+	// that decide aggregation, and carries no msg -- measured:
+	// {'data': {...}, 'per_host': False, 'aggregate': True}.
+	if _, gone := res.Extra["set_stats"]; gone {
+		t.Error("set_stats key present; real reports ansible_stats")
+	}
+	if !res.NoMsg {
+		t.Error("a msg key is present; real has none")
+	}
+	wrapper, ok := res.Extra["ansible_stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("ansible_stats = %#v", res.Extra["ansible_stats"])
+	}
+	if wrapper["aggregate"] != true || wrapper["per_host"] != false {
+		t.Errorf("wrapper = %#v, want aggregate true and per_host false", wrapper)
+	}
+	stats, ok := wrapper["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data = %#v", wrapper["data"])
+	}
 	if stats["errors"] != 3 {
 		t.Fatalf("stats = %#v", stats)
 	}
