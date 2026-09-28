@@ -45,6 +45,9 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 	// treats a zero Diff as nothing to report, so every exit below can
 	// attach it unconditionally.
 	var diff Diff
+	// The local file the content is written through, which real reports
+	// as src on a changed run.
+	var staged string
 	current, err := fetchIfExists(ctx, conn, dest)
 	if err != nil {
 		return Result{}, err
@@ -74,6 +77,7 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 			return Result{}, fmt.Errorf("copy: %w", err)
 		}
 		tmpPath := tmp.Name()
+		staged = tmpPath
 		defer os.Remove(tmpPath)
 		if _, err := tmp.Write(wantBytes); err != nil {
 			tmp.Close()
@@ -115,16 +119,64 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 		}
 	}
 
-	return copyResult(dest, changed).WithDiff(diff), nil
+	out := copyResult(dest, changed).WithDiff(diff)
+	out = out.WithExtra("diff", copyDiffKey(dest, string(current), string(wantBytes), InDiffMode(args)))
+	return withCopyFileKeys(ctx, conn, out, dest, staged, changed)
 }
 
 // copyResult is the module's single exit shape, so the check-mode
 // early-returns above report exactly what the real path would.
+// copyResult is the shape real reports, measured against ansible-core
+// 2.21.4:
+//
+//	changed    changed checksum dest diff failed gid group md5sum mode
+//	           owner size src state uid
+//	unchanged  the same, with src and md5sum replaced by path
+//
+// There is NO msg key on either -- this port set one to the destination
+// path -- and there are fourteen keys where this port reported three.
+//
+// src is real's own STAGING file (~/.ansible/tmp/…/.source.txt), not the
+// source the caller named, so its value is a per-run temporary path on
+// both sides and is never comparable between them. Only its presence is.
 func copyResult(dest string, changed bool) Result {
+	r := Ok("")
 	if changed {
-		return Changed(dest)
+		r = Changed("")
 	}
-	return Ok(dest)
+	r.NoMsg = true
+	return r.WithExtra("dest", dest)
+}
+
+// withCopyFileKeys adds what real reports about the file that is now at
+// dest. staged is the local file the content was written through, which
+// real reports as src on a changed run.
+func withCopyFileKeys(ctx context.Context, conn remoteexec.Connection, r Result, dest, staged string, changed bool) (Result, error) {
+	dict, err := statDict(ctx, conn, dest, statOptions{GetChecksum: true})
+	if err != nil {
+		return r, err
+	}
+	for from, to := range map[string]string{
+		"size": "size", "mode": "mode", "uid": "uid", "gid": "gid",
+		"checksum": "checksum", "pw_name": "owner", "gr_name": "group",
+	} {
+		if v, ok := dict[from]; ok {
+			r = r.WithExtra(to, v)
+		}
+	}
+	r = r.WithExtra("state", "file")
+	if changed {
+		// A changed run names the staging file and its md5.
+		r = r.WithExtra("src", staged)
+		res, mderr := conn.Exec(ctx, "md5 -q "+shellQuote(dest)+" 2>/dev/null || md5sum "+shellQuote(dest)+" 2>/dev/null | awk '{print $1}'", nil)
+		if mderr == nil {
+			r = r.WithExtra("md5sum", strings.TrimSpace(res.Stdout))
+		}
+	} else {
+		// An unchanged one names the path instead, and reports neither.
+		r = r.WithExtra("path", dest)
+	}
+	return r, nil
 }
 
 // copySource resolves the copy module's content, from either `content`
