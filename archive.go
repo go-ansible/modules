@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -106,8 +107,33 @@ func moduleArchive(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Result{}, err
 	}
 	if exists && !force {
-		return Ok(dest+" already exists").WithExtra("dest", dest), nil
+		return archiveResult(ctx, conn, false, paths, dest, compressOnly)
 	}
+
+	// A path that is not there is REPORTED, not fatal: real lists it
+	// under "missing" and succeeds -- measured, with ok: and
+	// missing=['<path>']. This port handed the name to gzip, which
+	// failed with "can't stat". Only the paths that exist are archived.
+	present := make([]string, 0, len(paths))
+	for _, p := range paths {
+		ok, err := pathExists(ctx, conn, p)
+		if err != nil {
+			return Result{}, err
+		}
+		if ok {
+			present = append(present, p)
+		}
+	}
+	if len(present) == 0 {
+		// Nothing to archive, so nothing is written and nothing changed.
+		return archiveResult(ctx, conn, false, paths, dest, compressOnly)
+	}
+	// reported keeps the ORIGINAL list, because "missing" is computed
+	// from it. Reassigning paths to the present ones made a run where
+	// SOME were missing report missing=[] -- a case with a mix is the
+	// only one that tells the two apart.
+	reported := paths
+	paths = present
 
 	var cmd string
 	if compressOnly {
@@ -129,7 +155,87 @@ func moduleArchive(ctx context.Context, conn remoteexec.Connection, args map[str
 		}
 	}
 
-	return Changed(dest).WithExtra("dest", dest).WithExtra("format", format), nil
+	return archiveResult(ctx, conn, true, reported, dest, compressOnly)
+}
+
+// archiveResult is real's own result shape, measured against
+// ansible-core 2.21.4:
+//
+//	archived arcroot changed dest dest_state expanded_exclude_paths
+//	expanded_paths failed gid group missing mode owner size state uid
+//
+// Sixteen keys where this port reported two, and no "format" key --
+// which this port invented -- and no msg.
+func archiveResult(ctx context.Context, conn remoteexec.Connection, changed bool, paths []string, dest string, compressOnly bool) (Result, error) {
+	r := Ok("")
+	if changed {
+		r = Changed("")
+	}
+	r.NoMsg = true
+
+	// The files that went in, and the paths that were not there. Real
+	// lists them in filesystem order, so a caller comparing them has to
+	// sort; the order is not part of the contract.
+	var archived []any
+	var missing []any
+	expanded := make([]any, 0, len(paths))
+	for _, p := range paths {
+		expanded = append(expanded, p)
+		ok, err := pathExists(ctx, conn, p)
+		if err != nil {
+			return Result{}, err
+		}
+		if !ok {
+			missing = append(missing, p)
+			continue
+		}
+		res, err := conn.Exec(ctx, "find "+shellQuote(p)+" -type f 2>/dev/null", nil)
+		if err != nil {
+			return Result{}, err
+		}
+		for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+			if line != "" {
+				archived = append(archived, line)
+			}
+		}
+	}
+	if archived == nil {
+		archived = []any{}
+	}
+	if missing == nil {
+		missing = []any{}
+	}
+
+	// The common parent of the paths, with a trailing separator --
+	// measured: path /tmp/x/ar gives arcroot /tmp/x/.
+	arcroot := ""
+	if len(paths) > 0 {
+		arcroot = filepath.Dir(paths[0]) + string(filepath.Separator)
+	}
+
+	destState := "archive"
+	if compressOnly {
+		destState = "compress"
+	}
+
+	r = r.WithExtra("dest", dest).
+		WithExtra("archived", archived).
+		WithExtra("missing", missing).
+		WithExtra("expanded_paths", expanded).
+		WithExtra("expanded_exclude_paths", []any{}).
+		WithExtra("arcroot", arcroot).
+		WithExtra("dest_state", destState).
+		WithExtra("state", "file")
+
+	if fi, err := statPath(ctx, conn, dest); err == nil && fi != nil {
+		r = r.WithExtra("mode", fmt.Sprintf("%04o", fi.mode)).
+			WithExtra("size", fi.size).
+			WithExtra("uid", fi.uid).
+			WithExtra("gid", fi.gid).
+			WithExtra("owner", fi.owner).
+			WithExtra("group", fi.group)
+	}
+	return r, nil
 }
 
 func archiveValidFormat(format string) bool {
