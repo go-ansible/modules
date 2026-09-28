@@ -115,7 +115,9 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 		newContent += "\n"
 	}
 	if newContent == string(current) {
-		return Ok(""), nil
+		// Real carries the diff key on the unchanged path too --
+		// measured: changed, diff, failed, msg.
+		return Ok("").WithExtra("diff", fileDiffKey(path, "", "")), nil
 	}
 	// Real's own wordings, measured: a file it had to create says so,
 	// and otherwise it says what it did to the block. None of them name
@@ -128,6 +130,9 @@ func moduleBlockinfile(ctx context.Context, conn remoteexec.Connection, args map
 		msg = "File created"
 	}
 	res := Changed(msg)
+	// The diff RESULT key, which real carries whether or not diff is on.
+	before, after := diffContent(InDiffMode(args), existing, []byte(newContent))
+	res = res.WithExtra("diff", fileDiffKey(path, before, after))
 	if InDiffMode(args) {
 		res = res.WithDiff(ContentDiff(ContentHeader(path), ContentHeader(path), existing, []byte(newContent)))
 	}

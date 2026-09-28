@@ -70,6 +70,8 @@ func moduleIniFile(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Result{}, err
 	}
 	existed := current != nil
+	// Kept before current is replaced below, for the diff key's before.
+	original := current
 	if current == nil {
 		if !create {
 			return Fail(fmt.Sprintf("%s does not exist (set create: true to allow creating it)", path)), nil
@@ -91,7 +93,20 @@ func moduleIniFile(ctx context.Context, conn remoteexec.Connection, args map[str
 	}
 
 	if !changed {
-		return Ok(""), nil
+		// Measured: changed, diff, failed, gid, group, mode, msg,
+		// owner, path, size, state, uid -- the same shape as a changed
+		// run, with an empty diff.
+		out := Ok("").WithExtra("diff", contentDiffEntry(path, "", "")).
+			WithExtra("path", path).WithExtra("state", "file")
+		if fi, serr := statPath(ctx, conn, path); serr == nil && fi != nil {
+			out = out.WithExtra("mode", fmt.Sprintf("%04o", fi.mode)).
+				WithExtra("size", fi.size).
+				WithExtra("uid", fi.uid).
+				WithExtra("gid", fi.gid).
+				WithExtra("owner", fi.owner).
+				WithExtra("group", fi.group)
+		}
+		return out, nil
 	}
 
 	if backup && existed {
@@ -118,7 +133,10 @@ func moduleIniFile(ctx context.Context, conn remoteexec.Connection, args map[str
 	// changed, diff, failed, gid, group, mode, msg, owner, path, size,
 	// state, uid.
 	out := Changed("")
-	out.NoMsg = true
+	// Real's diff key here is a single DICT, not a list -- unlike
+	// lineinfile's and blockinfile's.
+	before, after := diffContent(InDiffMode(args), original, []byte(newContent))
+	out = out.WithExtra("diff", contentDiffEntry(path, before, after))
 	out = out.WithExtra("path", path).WithExtra("state", "file")
 	if fi, serr := statPath(ctx, conn, path); serr == nil && fi != nil {
 		out = out.WithExtra("mode", fmt.Sprintf("%04o", fi.mode)).
