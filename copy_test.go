@@ -200,3 +200,73 @@ func TestCopyNewFileTakesTheUmaskDefault(t *testing.T) {
 		t.Errorf("rewritten file mode = %04o, want the 0640 it had", fi.Mode().Perm())
 	}
 }
+
+// Real's key sets, measured on each path of ansible-core 2.21.4. This
+// port reported three keys where real reports fourteen, and set a msg
+// real does not have.
+func TestCopyResultKeySets(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "c.txt")
+	ctx := context.Background()
+	conn := local()
+
+	changedKeys := []string{
+		"changed", "checksum", "dest", "diff", "gid", "group", "md5sum",
+		"mode", "owner", "size", "src", "state", "uid",
+	}
+	unchangedKeys := []string{
+		"changed", "checksum", "dest", "diff", "gid", "group",
+		"mode", "owner", "path", "size", "state", "uid",
+	}
+
+	res, err := moduleCopy(ctx, conn, map[string]any{"content": "alpha\n", "dest": dest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Changed {
+		t.Fatal("first copy was not changed")
+	}
+	assertKeys(t, "created", res, changedKeys)
+	// Real has NO msg key on copy.
+	if !res.NoMsg {
+		t.Error("copy reported a msg key; real has none")
+	}
+	// src is the STAGING file, not the caller's source: a per-run
+	// temporary path, which is why only its presence is comparable.
+	if s, _ := res.Extra["src"].(string); s == "" {
+		t.Error("no src on a changed copy")
+	}
+	if res.Extra["state"] != "file" {
+		t.Errorf("state = %v", res.Extra["state"])
+	}
+
+	res, err = moduleCopy(ctx, conn, map[string]any{"content": "alpha\n", "dest": dest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changed {
+		t.Fatal("second copy reported changed")
+	}
+	assertKeys(t, "unchanged", res, unchangedKeys)
+	// An unchanged run reports path, and neither src nor md5sum.
+	for _, absent := range []string{"src", "md5sum"} {
+		if _, ok := res.Extra[absent]; ok {
+			t.Errorf("unchanged copy reported %q; real does not", absent)
+		}
+	}
+	if res.Extra["path"] != dest {
+		t.Errorf("path = %v, want %v", res.Extra["path"], dest)
+	}
+}
+
+func assertKeys(t *testing.T, what string, res Result, want []string) {
+	t.Helper()
+	for _, k := range want {
+		if k == "changed" {
+			continue // a field, not an Extra
+		}
+		if _, ok := res.Extra[k]; !ok {
+			t.Errorf("%s: no %q key", what, k)
+		}
+	}
+}
