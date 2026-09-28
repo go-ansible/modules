@@ -3,9 +3,13 @@ package modules
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -65,6 +69,14 @@ func moduleFetch(ctx context.Context, conn remoteexec.Connection, args map[strin
 		return Result{}, fmt.Errorf("fetch: %w", err)
 	}
 
+	// A dest ending in a separator names a DIRECTORY, and the file
+	// lands in it under its own basename -- which is what `flat: true`
+	// with a trailing slash means. Treating it as a file name failed
+	// with "is a directory".
+	if strings.HasSuffix(dest, string(os.PathSeparator)) {
+		dest = filepath.Join(dest, filepath.Base(src))
+	}
+
 	changed := true
 	if oldData, err := os.ReadFile(dest); err == nil && bytes.Equal(oldData, newData) {
 		changed = false
@@ -79,9 +91,30 @@ func moduleFetch(ctx context.Context, conn remoteexec.Connection, args map[strin
 		}
 	}
 
-	r := Ok(dest)
+	// Real's own keys, measured:
+	//
+	//	changed    changed checksum dest failed file md5sum
+	//	           remote_checksum remote_md5sum
+	//	unchanged  the same without the two remote_ ones
+	//
+	// dest is the RESOLVED destination file, file is the remote source,
+	// and remote_md5sum is empty -- real stopped filling it and kept the
+	// key. This port reported dest and src, and src is not one of them.
+	r := Ok("")
 	if changed {
-		r = Changed(dest)
+		r = Changed("")
 	}
-	return r.WithExtra("dest", dest).WithExtra("src", src), nil
+	r.NoMsg = true
+	sum := sha1.Sum(newData)
+	checksum := hex.EncodeToString(sum[:])
+	md5 := md5.Sum(newData)
+	r = r.WithExtra("dest", dest).
+		WithExtra("file", src).
+		WithExtra("checksum", checksum).
+		WithExtra("md5sum", hex.EncodeToString(md5[:]))
+	if changed {
+		r = r.WithExtra("remote_checksum", checksum).
+			WithExtra("remote_md5sum", "")
+	}
+	return r, nil
 }
