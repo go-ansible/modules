@@ -3,6 +3,7 @@ package modules
 import (
 	"context"
 	"fmt"
+	"time"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -38,6 +39,7 @@ func moduleWaitFor(ctx context.Context, conn remoteexec.Connection, args map[str
 	delay := argInt(args, "delay", 0)
 	state := argString(args, "state", "started")
 
+	started := time.Now()
 	cmd, err := waitForScript(host, port, path, timeout, delay, state)
 	if err != nil {
 		return Result{}, err
@@ -48,10 +50,60 @@ func moduleWaitFor(ctx context.Context, conn remoteexec.Connection, args map[str
 		return Result{}, err
 	}
 	subject := waitForSubject(host, port, path)
-	if res.RC != 0 {
-		return Fail(fmt.Sprintf("Timeout when waiting for %s", subject)), nil
+
+	// Real's own exit_json names exactly these seven, on success and
+	// (minus most of them) on the timeout paths, which all carry
+	// elapsed:
+	//
+	//	state port search_regex match_groups match_groupdict path elapsed
+	//
+	// This port returned a msg and nothing else, so `wait_for` could
+	// be registered but not READ -- and add_path_info, which real
+	// applies to any result carrying `path`, had nothing to key on
+	// either. Measured against ansible-core 2.21.4: an existing path
+	// gives thirteen keys, nine of them from here and four more from
+	// the framework.
+	//
+	// match_groups and match_groupdict are always present and always
+	// EMPTY here: search_regex is not implemented by this port, so
+	// there is never a match to report. Real defaults them to () and
+	// {} and only fills them when search_regex matched, so the shape
+	// agrees and the values say "no match" on both sides -- which is
+	// true here for the honest reason that nothing was searched.
+	withKeys := func(r Result) Result {
+		return r.WithExtra("state", state).
+			// port and search_regex have NO default in real's argument
+			// spec -- `port=dict(type='int')`, `search_regex=dict(
+			// type='str')` -- so an unset one is None, not 0 and not
+			// "". Measured: the corpus caught `port=0` against real's
+			// `port=`.
+			WithExtra("port", argOrNil(args, "port", port)).
+			WithExtra("search_regex", argOrNil(args, "search_regex", nil)).
+			WithExtra("match_groups", []any{}).
+			WithExtra("match_groupdict", map[string]any{}).
+			WithExtra("path", path).
+			WithExtra("elapsed", elapsedSeconds(started))
 	}
-	return Ok(subject), nil
+	if res.RC != 0 {
+		// The timeout path DOES carry a msg: real's fail_json names
+		// one on every one of its own timeout branches.
+		return withKeys(Fail(fmt.Sprintf("Timeout when waiting for %s", subject))), nil
+	}
+	// The success path carries none. Real's exit_json lists seven keys
+	// and msg is not among them.
+	ok := Ok(subject)
+	ok.NoMsg = true
+	return withKeys(ok), nil
+}
+
+// elapsedSeconds is real's own `elapsed`: whole seconds, truncated,
+// from datetime's .seconds field.
+func elapsedSeconds(since time.Time) int {
+	d := int(time.Since(since).Seconds())
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 // waitForScript builds the polling shell script for moduleWaitFor,
@@ -103,4 +155,14 @@ func waitForSubject(host string, port int, path string) string {
 	default:
 		return "timeout"
 	}
+}
+
+// argOrNil returns the parsed value when the caller gave the argument
+// and nil when it did not -- real's own "no default in the argument
+// spec means None" for a module that reports the argument back.
+func argOrNil(args map[string]any, key string, parsed any) any {
+	if _, ok := args[key]; !ok {
+		return nil
+	}
+	return parsed
 }
