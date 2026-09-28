@@ -198,7 +198,14 @@ func (r *Registry) Run(ctx context.Context, name string, conn remoteexec.Connect
 	if err != nil {
 		return res, err
 	}
-	return finalizeOutput(res), nil
+	// Both halves of real's _return_formatted, which runs on EVERY
+	// result -- from exit_json and fail_json alike, so a FAILED result
+	// gets them too.
+	res, perr := addPathInfo(ctx, conn, name, finalizeOutput(res))
+	if perr != nil {
+		return res, perr
+	}
+	return res, nil
 }
 
 // finalizeOutput reproduces what real Ansible's AnsibleModule.exit_json

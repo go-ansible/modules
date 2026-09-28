@@ -33,5 +33,8 @@ func modulePing(ctx context.Context, conn remoteexec.Connection, args map[string
 	// No msg: real's ping returns {"changed": false, "ping": "pong"}
 	// and nothing else. Setting one as well put an extra key in every
 	// ad-hoc `ansible -m ping` dump.
-	return Result{}.WithExtra("ping", data), nil
+	// NoMsg, not merely an empty Msg: resultToMap distinguishes the
+	// two, and real's ping result has no msg KEY at all -- measured,
+	// its keys are exactly changed/failed/ping.
+	return Result{NoMsg: true}.WithExtra("ping", data), nil
 }
