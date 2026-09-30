@@ -6,7 +6,7 @@ require (
 	github.com/go-ansible/facts v0.16.0
 	github.com/go-ansible/template v0.30.0
 	github.com/go-regexp/engine v0.1.3
-	github.com/go-remoteexec/transport v0.1.8
+	github.com/go-remoteexec/transport v0.1.9
 	gopkg.in/yaml.v3 v3.0.1
 )
 
