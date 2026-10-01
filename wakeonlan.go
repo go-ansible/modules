@@ -5,7 +5,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"syscall"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -104,21 +103,4 @@ func wakeonlanMagicPacket(mac string) ([]byte, error) {
 		packet = append(packet, macBytes...)
 	}
 	return packet, nil
-}
-
-// wakeonlanEnableBroadcast sets SO_BROADCAST on uc's underlying socket
-// — required before a UDP send to a broadcast address succeeds; without
-// it the kernel refuses the send outright.
-func wakeonlanEnableBroadcast(uc *net.UDPConn) error {
-	raw, err := uc.SyscallConn()
-	if err != nil {
-		return err
-	}
-	var sockErr error
-	if err := raw.Control(func(fd uintptr) {
-		sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
-	}); err != nil {
-		return err
-	}
-	return sockErr
 }
