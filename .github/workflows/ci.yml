@@ -41,6 +41,33 @@ jobs:
       - name: Test
         run: go test ./...
 
+  # Compilation only, and deliberately not a test run. The test matrix above
+  # is ubuntu + macos, so nothing here ever built for Windows and a single
+  # call that types a socket differently there (syscall.SetsockoptInt takes a
+  # syscall.Handle, not an int fd) broke the build for this package and for
+  # every package importing it, unnoticed.
+  #
+  # It does not run the tests, because most of them shell out to a POSIX
+  # shell and would fail for reasons that say nothing about portability.
+  # Saying "it builds" is what this job can honestly claim.
+  cross:
+    name: cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+
   # The modules that drive a real external binary, driven against the real
   # binary. iso_create / iso_customize shell out to xorriso and then read the
   # image back with it; the terraform module runs a real plan/apply cycle.
