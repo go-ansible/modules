@@ -9,7 +9,7 @@ import (
 
 func TestModuleKeaCommandStatusGetUnchanged(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"command -v kea-shell":                                  {RC: 0},
+		"command -v kea-shell": {RC: 0},
 		"kea-shell --host 192.0.2.1 --service dhcp4 status-get": {RC: 0, Stdout: `{"result":0,"arguments":{"pid":123}}`},
 	})
 	res, err := moduleKeaCommand(context.Background(), conn, map[string]any{
