@@ -39,5 +39,11 @@ func moduleSetup(ctx context.Context, conn remoteexec.Connection, args map[strin
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{Msg: "gathered facts", Facts: gathered}, nil
+	// Real's setup ends with exit_json(ansible_facts=facts_dict) and
+	// nothing else, so `r.msg` after a real setup is an UNDEFINED
+	// variable. This reported "gathered facts", a sentence real never
+	// emits -- measured key sets: real ansible_facts,changed,failed;
+	// ours had msg on top. Same shape as set_fact, whose own plugin
+	// does the same thing.
+	return Result{NoMsg: true, Facts: gathered}, nil
 }
