@@ -3,6 +3,7 @@ package modules
 import (
 	"context"
 	"fmt"
+	"time"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -45,8 +46,37 @@ func modulePause(ctx context.Context, conn remoteexec.Connection, args map[strin
 			"controller prompt to wait on, so an unbounded pause is refused rather than hanging forever"), nil
 	}
 
+	start := time.Now()
 	if _, err := run(ctx, conn, fmt.Sprintf("sleep %d", total)); err != nil {
 		return Result{}, err
 	}
-	return Ok(fmt.Sprintf("paused for %d seconds", total)), nil
+	stop := time.Now()
+
+	// Real's pause reports twelve keys and no msg. Measured for
+	// `pause: {seconds: 1}`:
+	//
+	//	rc=0  echo=True  delta=1  user_input=''  stderr=''
+	//	stdout="Paused for 1.02 seconds"
+	//	stdout_lines=['Paused for 1.02 seconds']
+	//	changed=False
+	//
+	// delta is the INT seconds while stdout carries the real elapsed
+	// to two decimals -- they are not the same number, and reporting
+	// one for both would be wrong in whichever place it was reused.
+	// stdout_lines/stderr_lines come from finalizeOutput, which
+	// derives them from stdout/stderr for every module.
+	//
+	// start and stop are timestamps whose VALUES are per-run and never
+	// comparable between the two sides; only their presence is, the
+	// same as copy's staging path.
+	elapsed := stop.Sub(start).Seconds()
+	out := Result{NoMsg: true}
+	return out.WithExtra("start", start.Format("2006-01-02 15:04:05.000000")).
+		WithExtra("stop", stop.Format("2006-01-02 15:04:05.000000")).
+		WithExtra("delta", total).
+		WithExtra("echo", argBool(args, "echo", true)).
+		WithExtra("rc", 0).
+		WithExtra("user_input", "").
+		WithExtra("stdout", fmt.Sprintf("Paused for %.2f seconds", elapsed)).
+		WithExtra("stderr", ""), nil
 }
