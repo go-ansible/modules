@@ -81,9 +81,19 @@ func ComposeCommandLine(ctx context.Context, conn remoteexec.Connection, module 
 		} else if skip {
 			return "", true, msg, nil
 		}
+		// expand_argument_vars, real's own default-true option: each
+		// argv element goes through expanduser(expandvars(x)) there.
+		// See expandArgumentVars for why the expansion is delegated to
+		// the target's shell rather than done here, and for what it
+		// refuses to delegate.
+		expand := argBool(args, "expand_argument_vars", true)
 		quoted := make([]string, len(argv))
 		for i, a := range argv {
-			quoted[i] = shellQuote(a)
+			if expand {
+				quoted[i] = expandArgumentVars(a)
+			} else {
+				quoted[i] = shellQuote(a)
+			}
 		}
 		cmdLine := strings.Join(quoted, " ")
 		// -P, because real chdirs the PROCESS (os.chdir) rather than
