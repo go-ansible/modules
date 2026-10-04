@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -60,38 +61,70 @@ func moduleUnarchive(ctx context.Context, conn remoteexec.Connection, args map[s
 		}
 	}
 
-	cmd, err := unarchiveCmd(archivePath, dest)
+	cmd, handler, err := unarchiveCmd(archivePath, dest)
 	if err != nil {
 		return Result{}, err
 	}
-	if _, err := run(ctx, conn, cmd); err != nil {
-		return Result{}, err
+	// runStatus rather than run, because extract_results reports the
+	// command's rc/out/err and run() discards them. The non-zero check
+	// below keeps run()'s own behaviour and wording, so a failing
+	// extraction fails exactly as it did before.
+	res, err := runStatus(ctx, conn, cmd)
+	if err != nil {
+		return Result{}, fmt.Errorf("running %q: %w", cmd, err)
+	}
+	if res.RC != 0 {
+		return Result{}, fmt.Errorf("running %q: exit %d: %s", cmd, res.RC, strings.TrimSpace(res.Stderr))
 	}
 
 	if !remoteSrc {
 		_ = conn.Remove(ctx, archivePath) // best-effort cleanup, see script.go's same pattern
 	}
-	return Changed(dest), nil
+
+	// Real's key set on a successful extraction, measured on a .zip
+	// that both engines handle:
+	//
+	//	changed,dest,extract_results,failed,gid,group,handler,mode,owner,size,src,state,uid
+	//
+	// and no msg. This returned Changed(dest), so three keys came back
+	// and `msg` held the DESTINATION PATH. `dest` in Extra is also what
+	// makes addPathInfo fill in the file attributes -- it reports
+	// state=directory here, which is what real reports too.
+	out := Changed("")
+	out.NoMsg = true
+	return out.WithExtra("src", src).
+		WithExtra("dest", dest).
+		WithExtra("handler", handler).
+		WithExtra("extract_results", map[string]any{
+			"cmd": cmd, "rc": res.RC, "out": res.Stdout, "err": res.Stderr,
+		}), nil
 }
 
 // unarchiveCmd builds the tar/unzip invocation for moduleUnarchive,
 // separated out so its exact shape (and extension dispatch) can be
 // asserted directly in tests.
-func unarchiveCmd(archivePath, dest string) (string, error) {
+// unarchiveCmd returns the extraction command and the HANDLER NAME real
+// reports for that archive type. Real's names are its own Python handler
+// classes -- it tries [ZipArchive, ZipZArchive, TgzArchive, TarArchive,
+// TarBzipArchive, TarXzArchive, TarZstdArchive] in order and reports
+// whichever answered can_handle_archive() -- and a playbook reading
+// r.handler reads one of those strings, so they are used verbatim rather
+// than invented.
+func unarchiveCmd(archivePath, dest string) (cmd, handler string, err error) {
 	lower := strings.ToLower(archivePath)
 	q, d := shellQuote(archivePath), shellQuote(dest)
 	switch {
 	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):
-		return "tar xzf " + q + " -C " + d, nil
+		return "tar xzf " + q + " -C " + d, "TgzArchive", nil
 	case strings.HasSuffix(lower, ".tar.bz2"), strings.HasSuffix(lower, ".tbz2"):
-		return "tar xjf " + q + " -C " + d, nil
+		return "tar xjf " + q + " -C " + d, "TarBzipArchive", nil
 	case strings.HasSuffix(lower, ".tar.xz"), strings.HasSuffix(lower, ".txz"):
-		return "tar xJf " + q + " -C " + d, nil
+		return "tar xJf " + q + " -C " + d, "TarXzArchive", nil
 	case strings.HasSuffix(lower, ".tar"):
-		return "tar xf " + q + " -C " + d, nil
+		return "tar xf " + q + " -C " + d, "TarArchive", nil
 	case strings.HasSuffix(lower, ".zip"):
-		return "unzip -o " + q + " -d " + d, nil
+		return "unzip -o " + q + " -d " + d, "ZipArchive", nil
 	default:
-		return "", errArg("unarchive: unrecognized archive extension for %q (supported: .tar, .tar.gz/.tgz, .tar.bz2/.tbz2, .tar.xz/.txz, .zip)", archivePath)
+		return "", "", errArg("unarchive: unrecognized archive extension for %q (supported: .tar, .tar.gz/.tgz, .tar.bz2/.tbz2, .tar.xz/.txz, .zip)", archivePath)
 	}
 }
