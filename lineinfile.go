@@ -10,29 +10,87 @@ import (
 	remoteexec "github.com/go-remoteexec/transport"
 )
 
-// moduleLineinfile implements (a subset of) Ansible's `lineinfile`
-// module: ensures a particular line is present or absent in a file.
+// moduleLineinfile implements Ansible's `lineinfile` module: ensures a
+// particular line is present or absent in a file.
 //
-// Args: path (string, required); line (string, required unless
-// state=absent with regexp); regexp (string) — when set, the line
-// replacing/removed is whichever existing line matches it, otherwise an
-// exact-line match is used; state (present|absent, default "present");
-// create (bool, default false) — create the file if it doesn't exist.
+// Args: path (required); line (required with state=present); regexp;
+// search_string (a SUBSTRING, not a pattern); insertafter and
+// insertbefore (a pattern, or the words EOF/BOF); backrefs; firstmatch;
+// state (present|absent, default present); create (default false).
+// insertbefore|insertafter, regexp|search_string and
+// backrefs|search_string are mutually exclusive, as they are in real's
+// own argument spec.
+//
+// Three behaviours here are measured against ansible-core 2.21.4
+// rather than inferred, because the reasonable guess is wrong in each:
+//
+//   - WITHOUT firstmatch, the LAST matching line is the one edited.
+//     Real's search loop does not break. On alpha=1/beta=2/alpha=3 with
+//     regexp ^alpha=, real rewrites alpha=3.
+//   - backrefs with NO match does nothing at all -- not an append. The
+//     line cannot be built without the groups that would fill it.
+//   - a regexp or search_string match makes insertafter/insertbefore
+//     irrelevant; they only place a line that is not there yet.
+//
+// The error shapes are real's too: rc=257 with "Destination %s does not
+// exist !" for a missing file without create, "regexp is required with
+// backrefs=true", and state=absent on a missing file reporting
+// changed=false with "file not present" rather than failing.
 func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	path, err := requireString(args, "path")
 	if err != nil {
 		return Result{}, err
 	}
-	state := argString(args, "state", "present")
-	line := argString(args, "line", "")
+	spec := lineinfileSpec{
+		state:        argString(args, "state", "present"),
+		line:         argString(args, "line", ""),
+		searchString: argString(args, "search_string", ""),
+		insertAfter:  argString(args, "insertafter", ""),
+		insertBefore: argString(args, "insertbefore", ""),
+		backrefs:     argBool(args, "backrefs", false),
+		firstmatch:   argBool(args, "firstmatch", false),
+	}
 	regexpArg := argString(args, "regexp", "")
 	create := argBool(args, "create", false)
+
+	// Real declares these three pairs mutually_exclusive, and the
+	// argument spec rejects them before the module body runs.
+	for _, pair := range [][2]string{
+		{"insertbefore", "insertafter"}, {"regexp", "search_string"}, {"backrefs", "search_string"},
+	} {
+		if _, a := args[pair[0]]; a {
+			if _, b := args[pair[1]]; b {
+				return Fail(fmt.Sprintf("parameters are mutually exclusive: %s|%s", pair[0], pair[1])), nil
+			}
+		}
+	}
+	if spec.backrefs && regexpArg == "" {
+		return Fail("regexp is required with backrefs=true"), nil
+	}
+	if spec.state == "present" && spec.line == "" {
+		if _, ok := args["line"]; !ok {
+			return Fail("line is required with state=present"), nil
+		}
+	}
 
 	var re *pcre.Regexp
 	if regexpArg != "" {
 		re, err = pcre.Compile(regexpArg)
 		if err != nil {
 			return Result{}, errArg("lineinfile: invalid regexp: %v", err)
+		}
+	}
+	spec.re = re
+	// insertafter/insertbefore are regexes too, except for the two
+	// reserved words real treats as positions rather than patterns.
+	if spec.insertAfter != "" && spec.insertAfter != "EOF" && spec.insertAfter != "BOF" {
+		if spec.insAfterRe, err = pcre.Compile(spec.insertAfter); err != nil {
+			return Result{}, errArg("lineinfile: invalid insertafter: %v", err)
+		}
+	}
+	if spec.insertBefore != "" && spec.insertBefore != "BOF" {
+		if spec.insBeforeRe, err = pcre.Compile(spec.insertBefore); err != nil {
+			return Result{}, errArg("lineinfile: invalid insertbefore: %v", err)
 		}
 	}
 
@@ -45,14 +103,29 @@ func moduleLineinfile(ctx context.Context, conn remoteexec.Connection, args map[
 	// "--- before" rather than claiming empty contents to compare.
 	existing := current
 	if current == nil {
+		// Measured against ansible-core 2.21.4: state=absent on a
+		// missing file is NOT a failure, it is changed=false with this
+		// exact message; state=present without create fails with
+		// rc=257 and a message whose spacing ("... does not exist !")
+		// is real's own.
+		if spec.state == "absent" {
+			return Result{Extra: map[string]any{"msg": "file not present"}}, nil
+		}
 		if !create {
-			return Fail(fmt.Sprintf("%s does not exist (set create: true to allow creating it)", path)), nil
+			res := Fail(fmt.Sprintf("Destination %s does not exist !", path))
+			return res.WithExtra("rc", 257), nil
 		}
 		current = []byte{}
 	}
 
 	lines := splitLines(string(current))
-	newLines, outcome := applyLineinfile(lines, line, re, state)
+	var newLines []string
+	var outcome lineinfileOutcome
+	if spec.state == "absent" {
+		newLines, outcome = applyLineinfileAbsent(lines, spec)
+	} else {
+		newLines, outcome = applyLineinfilePresent(lines, spec)
+	}
 	if !outcome.changed {
 		// Real's msg is EMPTY when nothing happened, not a sentence
 		// about the file -- and it is PRESENT and empty, not absent,
@@ -104,51 +177,6 @@ type lineinfileOutcome struct {
 	// removed is reported as "found" alongside the message, which is
 	// how a playbook learns how many lines the pattern matched.
 	removed int
-}
-
-func applyLineinfile(lines []string, line string, re *pcre.Regexp, state string) ([]string, lineinfileOutcome) {
-	matches := func(l string) bool {
-		if re != nil {
-			return re.MatchString(l)
-		}
-		return l == line
-	}
-
-	if state == "absent" {
-		var out []string
-		removed := 0
-		for _, l := range lines {
-			if matches(l) {
-				removed++
-				continue
-			}
-			out = append(out, l)
-		}
-		if removed == 0 {
-			return out, lineinfileOutcome{}
-		}
-		return out, lineinfileOutcome{
-			changed: true,
-			msg:     fmt.Sprintf("%d line(s) removed", removed),
-			removed: removed,
-		}
-	}
-
-	// state == "present"
-	for i, l := range lines {
-		if matches(l) {
-			if l == line {
-				return lines, lineinfileOutcome{}
-			}
-			out := append([]string{}, lines...)
-			out[i] = line
-			return out, lineinfileOutcome{changed: true, msg: "line replaced"}
-		}
-	}
-	// No matching line: append.
-	out := append([]string{}, lines...)
-	out = append(out, line)
-	return out, lineinfileOutcome{changed: true, msg: "line added"}
 }
 
 func splitLines(s string) []string {
