@@ -41,6 +41,34 @@ func moduleKnownHosts(ctx context.Context, conn remoteexec.Connection, args map[
 	path := argString(args, "path", "~/.ssh/known_hosts")
 	state := argString(args, "state", "present")
 
+	// Real's known_hosts ENDS with
+	//
+	//	results = copy.copy(module.params)
+	//	results.update(enforce_state(module, module.params))
+	//	module.exit_json(**results)
+	//
+	// so every parameter comes back as a result key -- name, key, path,
+	// hash_host and state -- carrying a "# TODO: deprecate returning
+	// everything that was passed in" in real's own source. Undesirable
+	// upstream or not, it is the behaviour, and this module returned
+	// changed/failed/msg with an English sentence instead.
+	//
+	// `path` in Extra is also what makes addPathInfo (Registry.Run)
+	// fill in uid/gid/owner/group/mode/size, since that is the key it
+	// looks for. It OVERWRITES state with the file's own -- measured:
+	// real reports state=file here, not the parameter's "present".
+	echo := func(r Result) Result {
+		r.NoMsg = true
+		r = r.WithExtra("name", name).
+			WithExtra("path", path).
+			WithExtra("state", state).
+			WithExtra("hash_host", argBool(args, "hash_host", false))
+		if k, ok := args["key"].(string); ok {
+			r = r.WithExtra("key", k)
+		}
+		return r
+	}
+
 	switch state {
 	case "present":
 		key, err := requireString(args, "key")
@@ -52,14 +80,14 @@ func moduleKnownHosts(ctx context.Context, conn remoteexec.Connection, args map[
 			return Result{}, err
 		}
 		if present {
-			return Ok(name + " already in " + path), nil
+			return echo(Ok("")), nil
 		}
 		dir := shellDirname(path)
 		cmd := "mkdir -p " + shellQuote(dir) + " && printf '%s\\n' " + shellQuote(key) + " >> " + shellQuote(path)
 		if _, err := run(ctx, conn, cmd); err != nil {
 			return Result{}, err
 		}
-		return Changed(name + " added to " + path), nil
+		return echo(Changed("")), nil
 
 	case "absent":
 		present, err := knownHostNamePresent(ctx, conn, path, name)
@@ -67,14 +95,14 @@ func moduleKnownHosts(ctx context.Context, conn remoteexec.Connection, args map[
 			return Result{}, err
 		}
 		if !present {
-			return Ok(name + " not in " + path), nil
+			return echo(Ok("")), nil
 		}
 		cmd := "grep -v " + shellQuote(name) + " " + shellQuote(path) + " > " + shellQuote(path+".tmp") +
 			" && mv " + shellQuote(path+".tmp") + " " + shellQuote(path)
 		if _, err := run(ctx, conn, cmd); err != nil {
 			return Result{}, err
 		}
-		return Changed(name + " removed from " + path), nil
+		return echo(Changed("")), nil
 
 	default:
 		return Result{}, errArg("known_hosts: state must be present or absent, got %q", state)

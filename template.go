@@ -63,6 +63,7 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 	check := InCheckMode(args)
 
 	changed := false
+	var staged string
 	// diff stays zero unless --diff asked for one; Result.WithDiff
 	// treats a zero Diff as nothing to report.
 	var diff Diff
@@ -83,10 +84,25 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 			diff = ContentDiff(dest, dest, current, []byte(rendered))
 		}
 		if check {
-			return Changed(dest).WithDiff(diff), nil
+			return templateResult(dest, true).WithDiff(diff), nil
 		}
-		if err := writeRemote(ctx, conn, dest, []byte(rendered)); err != nil {
-			return Result{}, err
+		// Staged through a named temporary, the way copy does, because
+		// real reports its own staging file as `src` on a changed run.
+		// Its VALUE is a per-run path and never comparable between the
+		// two sides; only its presence is.
+		tmp, terr := os.CreateTemp("", "go-ansible-template-*")
+		if terr != nil {
+			return Result{}, fmt.Errorf("template: %w", terr)
+		}
+		staged = tmp.Name()
+		defer os.Remove(staged)
+		if _, werr := tmp.Write([]byte(rendered)); werr != nil {
+			tmp.Close()
+			return Result{}, fmt.Errorf("template: %w", werr)
+		}
+		tmp.Close()
+		if err := conn.Put(ctx, staged, dest, remoteexec.PutOptions{MkdirParents: true}); err != nil {
+			return Result{}, fmt.Errorf("template: writing %s: %w", dest, err)
 		}
 		changed = true
 	}
@@ -98,7 +114,7 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 		}
 		if info == nil || info.mode != *mode {
 			if check {
-				return Changed(dest).WithDiff(diff), nil
+				return templateResult(dest, true).WithDiff(diff), nil
 			}
 			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(dest))); err != nil {
 				return Result{}, err
@@ -107,8 +123,22 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 		}
 	}
 
-	if changed {
-		return Changed(dest).WithDiff(diff), nil
-	}
-	return Ok(dest), nil
+	out := templateResult(dest, changed).WithDiff(diff)
+	return withCopyFileKeys(ctx, conn, out, dest, staged, changed)
+}
+
+// templateResult is template's exit shape. Real reports EXACTLY the
+// key set copy reports -- measured side by side on the same dest:
+//
+//	copy      changed,checksum,dest,failed,gid,group,md5sum,mode,owner,size,src,state,uid
+//	template  changed,checksum,dest,failed,gid,group,md5sum,mode,owner,size,src,state,uid
+//
+// and no msg on either. This module returned Changed(dest)/Ok(dest),
+// so three keys came back instead of thirteen and `msg` held the
+// DESTINATION PATH -- a playbook reading r.dest, r.checksum or r.mode
+// after a template, which is ordinary usage, got an undefined
+// variable. Since the shape is identical, the builder is copy's own
+// rather than a second copy of it.
+func templateResult(dest string, changed bool) Result {
+	return copyResult(dest, changed)
 }

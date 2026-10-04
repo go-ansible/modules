@@ -147,3 +147,89 @@ func TestAddExceptionDoesNotOverwrite(t *testing.T) {
 		t.Errorf("exception = %v, want the module's own value kept", got)
 	}
 }
+
+// Real's template reports EXACTLY the key set real's copy reports --
+// measured side by side on the same dest:
+//
+//	copy      changed,checksum,dest,failed,gid,group,md5sum,mode,owner,size,src,state,uid
+//	template  changed,checksum,dest,failed,gid,group,md5sum,mode,owner,size,src,state,uid
+//
+// and no msg on either. This module returned Changed(dest), so three
+// keys came back instead of thirteen and msg held the DESTINATION
+// PATH. A playbook reading r.dest, r.checksum or r.mode after a
+// template -- ordinary usage -- got an undefined variable.
+func TestTemplateReportsTheSameKeysAsCopy(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "s.j2")
+	if err := os.WriteFile(src, []byte("hi {{ 1 + 1 }}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "d.txt")
+	res, err := Default().Run(context.Background(), "template", remoteexec.NewLocal(),
+		map[string]any{"src": src, "dest": dest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.NoMsg {
+		t.Errorf("template emits a msg key (it held %q); real emits none", res.Msg)
+	}
+	for _, k := range []string{"dest", "checksum", "md5sum", "mode", "owner", "group", "size", "src", "state", "uid", "gid"} {
+		if _, ok := res.Extra[k]; !ok {
+			t.Errorf("missing key %q that real reports", k)
+		}
+	}
+	if res.Extra["state"] != "file" {
+		t.Errorf("state = %v, want file", res.Extra["state"])
+	}
+	// and the template was actually rendered, not copied verbatim
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "hi 2\n" {
+		t.Errorf("rendered %q, want %q", got, "hi 2\n")
+	}
+}
+
+// known_hosts ends with `results = copy.copy(module.params)` in real,
+// so every parameter comes back as a result key. Real's own source
+// carries "# TODO: deprecate returning everything that was passed in"
+// beside it -- undesirable upstream or not, it is the behaviour.
+//
+// `path` in Extra is also what makes addPathInfo fill in the file
+// attributes, and it OVERWRITES state with the file's own: measured,
+// real reports state=file here, not the parameter's "present".
+func TestKnownHostsEchoesItsParameters(t *testing.T) {
+	dir := t.TempDir()
+	kh := filepath.Join(dir, "kh")
+	if err := os.WriteFile(kh, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Default().Run(context.Background(), "known_hosts", remoteexec.NewLocal(),
+		map[string]any{"path": kh, "name": "example.com", "key": "example.com ssh-rsa AAAAB3NzaC1yc2E="})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.NoMsg {
+		t.Errorf("known_hosts emits a msg key (it held %q); real emits none", res.Msg)
+	}
+	for k, want := range map[string]any{
+		"name": "example.com", "path": kh, "hash_host": false,
+		"key": "example.com ssh-rsa AAAAB3NzaC1yc2E=",
+	} {
+		if got := res.Extra[k]; got != want {
+			t.Errorf("%s = %v, want %v", k, got, want)
+		}
+	}
+	// state is the PARAMETER here; addPathInfo replaces it with the
+	// file's own in Registry.Run, which is what real reports. This test
+	// calls Run, so it sees the replaced one.
+	if res.Extra["state"] != "file" {
+		t.Errorf("state = %v, want file (addPathInfo overwrites the parameter)", res.Extra["state"])
+	}
+	for _, k := range []string{"mode", "owner", "group", "size", "uid", "gid"} {
+		if _, ok := res.Extra[k]; !ok {
+			t.Errorf("missing %q -- addPathInfo did not fire, so `path` is not in Extra", k)
+		}
+	}
+}

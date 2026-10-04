@@ -22,7 +22,10 @@ if res.Failed {
 }
 ```
 
-`conn` is a `github.com/go-remoteexec/transport.Connection` (local or SSH).
+`conn` is a `github.com/go-remoteexec/transport.Connection` — local, SSH
+or WinRM. The WinRM one reaches a Windows host, though most modules here
+compose POSIX shell and so will not run against one; the `ansible.windows`
+family is not ported.
 Unlike real Ansible, a module here runs its logic on the control node and
 reaches the target only through the connection's `Exec`/`Put`/`Fetch`
 primitives — no Python, no script copied to the target. `reg.Names()` lists
