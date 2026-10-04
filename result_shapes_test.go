@@ -147,3 +147,46 @@ func TestAddExceptionDoesNotOverwrite(t *testing.T) {
 		t.Errorf("exception = %v, want the module's own value kept", got)
 	}
 }
+
+// Real's template reports EXACTLY the key set real's copy reports --
+// measured side by side on the same dest:
+//
+//	copy      changed,checksum,dest,failed,gid,group,md5sum,mode,owner,size,src,state,uid
+//	template  changed,checksum,dest,failed,gid,group,md5sum,mode,owner,size,src,state,uid
+//
+// and no msg on either. This module returned Changed(dest), so three
+// keys came back instead of thirteen and msg held the DESTINATION
+// PATH. A playbook reading r.dest, r.checksum or r.mode after a
+// template -- ordinary usage -- got an undefined variable.
+func TestTemplateReportsTheSameKeysAsCopy(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "s.j2")
+	if err := os.WriteFile(src, []byte("hi {{ 1 + 1 }}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "d.txt")
+	res, err := Default().Run(context.Background(), "template", remoteexec.NewLocal(),
+		map[string]any{"src": src, "dest": dest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.NoMsg {
+		t.Errorf("template emits a msg key (it held %q); real emits none", res.Msg)
+	}
+	for _, k := range []string{"dest", "checksum", "md5sum", "mode", "owner", "group", "size", "src", "state", "uid", "gid"} {
+		if _, ok := res.Extra[k]; !ok {
+			t.Errorf("missing key %q that real reports", k)
+		}
+	}
+	if res.Extra["state"] != "file" {
+		t.Errorf("state = %v, want file", res.Extra["state"])
+	}
+	// and the template was actually rendered, not copied verbatim
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "hi 2\n" {
+		t.Errorf("rendered %q, want %q", got, "hi 2\n")
+	}
+}
