@@ -70,6 +70,46 @@ echo %s
 	return jid, nil
 }
 
+// validAsyncJID reports whether jid has the shape this package itself
+// generates: "<unixnano>.<random>", digits and a single dot. Real
+// Ansible's own job ids have that shape too.
+//
+// ⛔ SECURITY. jid arrives from a playbook argument
+// (async_status: {jid: ...}) and used to be interpolated into a shell
+// command UNQUOTED, including into `rm -rf`. A jid of
+// `x; touch /tmp/pwned ;` ran that touch -- demonstrated by a test in
+// this package, which fails if the hole reopens.
+//
+// shellQuote on every interpolation is what CLOSES the hole; this
+// validator is defence in depth behind it.
+//
+// It must not change what a caller SEES, though. Real accepts a
+// malformed jid and reports its ordinary not-found result -- measured:
+// `async_status: {jid: nope}` gives msg "could not find job" with
+// started/finished true, not an error. A first version of this
+// rejected the shape outright and broke that parity, which an existing
+// test caught. So a jid that fails this check is treated as NOT FOUND,
+// which is both real's answer and a value that never reaches a shell.
+func validAsyncJID(jid string) bool {
+	if jid == "" || len(jid) > 64 {
+		return false
+	}
+	dots := 0
+	for _, r := range jid {
+		switch {
+		case r >= '0' && r <= '9':
+		case r == '.':
+			dots++
+			if dots > 1 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // AsyncCheck reports a job's current status. found=false means no job
 // directory exists at all for jid (a typo, or AsyncCleanup already
 // ran) — distinct from done=false, which means the directory exists
@@ -95,7 +135,12 @@ func AsyncResultsFile(ctx context.Context, conn remoteexec.Connection, jid strin
 }
 
 func AsyncCheck(ctx context.Context, conn remoteexec.Connection, jid string) (found, done bool, rc int, stdout, stderr string, err error) {
-	d := asyncDirExpr + "/" + jid
+	// A jid that is not of this package's own shape cannot name a job
+	// it created, so it is NOT FOUND -- real's own answer for one.
+	if !validAsyncJID(jid) {
+		return false, false, 0, "", "", nil
+	}
+	d := asyncDirExpr + "/" + shellQuote(jid)
 	probe := fmt.Sprintf(`d=%s
 if [ ! -d "$d" ]; then echo NOTFOUND
 elif [ -f "$d/rc" ]; then echo DONE; cat "$d/rc"
@@ -135,6 +180,11 @@ fi
 // AsyncCleanup removes a job's directory entirely — async_status's
 // mode=cleanup.
 func AsyncCleanup(ctx context.Context, conn remoteexec.Connection, jid string) error {
-	_, err := conn.Exec(ctx, fmt.Sprintf(`rm -rf %s/%s`, asyncDirExpr, jid), nil)
+	// Nothing to remove for a jid this package never issued, and
+	// nothing is sent to a shell either.
+	if !validAsyncJID(jid) {
+		return nil
+	}
+	_, err := conn.Exec(ctx, fmt.Sprintf(`rm -rf %s/%s`, asyncDirExpr, shellQuote(jid)), nil)
 	return err
 }
