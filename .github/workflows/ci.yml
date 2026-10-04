@@ -36,6 +36,19 @@ jobs:
         with:
           go-version: stable
       - run: go version
+      # gofmt reports, it does not fail, so the check is the OUTPUT being
+      # empty. A drifted file sat on main undetected until a local
+      # `gofmt -l` turned it up while writing an unrelated change: vet,
+      # build and test all pass on badly formatted code, so nothing here
+      # was looking.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"; echo "$unformatted"
+            gofmt -d $unformatted
+            exit 1
+          fi
       - run: go vet ./...
       - run: go build ./...
       - name: Test
