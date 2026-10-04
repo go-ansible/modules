@@ -9,13 +9,21 @@ import (
 
 func TestUriCmd(t *testing.T) {
 	cmd := uriCmd("GET", "https://example.com", "", nil)
-	want := "curl -s -w " + shellQuote("\nHTTPSTATUS:%{http_code}") + " -X GET https://example.com"
+	// -i so the response HEADERS come back: real builds most of its
+	// result from them. -L follows redirects as real's own
+	// follow_redirects default does, and url_effective is what reveals
+	// whether one was followed.
+	want := "curl -s -i -L -w " +
+		shellQuote("\nHTTPSTATUS:%{http_code}\nHTTPTIME:%{time_total}\nHTTPURL:%{url_effective}") +
+		" -X GET https://example.com"
 	if cmd != want {
 		t.Fatalf("cmd = %q, want %q", cmd, want)
 	}
 
 	cmd = uriCmd("POST", "https://example.com", "hi", map[string]any{"B": "2", "A": "1"})
-	want = "curl -s -w " + shellQuote("\nHTTPSTATUS:%{http_code}") + " -X POST" +
+	want = "curl -s -i -L -w " +
+		shellQuote("\nHTTPSTATUS:%{http_code}\nHTTPTIME:%{time_total}\nHTTPURL:%{url_effective}") +
+		" -X POST" +
 		" -H " + shellQuote("A: 1") + " -H " + shellQuote("B: 2") +
 		" -d hi https://example.com"
 	if cmd != want {
@@ -82,7 +90,7 @@ func TestModuleUriSuccessGet(t *testing.T) {
 	url := "https://example.com"
 	cmd := uriCmd("GET", url, "", nil)
 	conn := newFakeConn(map[string]remoteexec.Result{
-		cmd: {RC: 0, Stdout: "{\"ok\":true}\nHTTPSTATUS:200"},
+		cmd: {RC: 0, Stdout: "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n{\"ok\":true}\nHTTPSTATUS:200\nHTTPTIME:0.01\nHTTPURL:https://example.com"},
 	})
 	res, err := moduleURI(context.Background(), conn, map[string]any{"url": url})
 	if err != nil {
@@ -94,8 +102,21 @@ func TestModuleUriSuccessGet(t *testing.T) {
 	if res.Extra["status"] != 200 {
 		t.Fatalf("status = %v", res.Extra["status"])
 	}
-	if res.Extra["content"] != "{\"ok\":true}" {
-		t.Fatalf("content = %v", res.Extra["content"])
+	// `content` appears only with return_content: true -- measured
+	// against ansible-core 2.21.4, whose key set without it is
+	// changed,content_length,content_type,cookies,cookies_string,date,
+	// elapsed,failed,json,last_modified,msg,redirected,server,status,url
+	// and carries no content. This test used to require it
+	// unconditionally, pinning THIS PORT's own behaviour.
+	if _, present := res.Extra["content"]; present {
+		t.Errorf("content is reported without return_content; real omits it")
+	}
+	// the body still reaches a playbook as `json` when it parses as one
+	if m, ok := res.Extra["json"].(map[string]any); !ok || m["ok"] != true {
+		t.Errorf("json = %v, want the parsed body", res.Extra["json"])
+	}
+	if res.Msg != "OK (11 bytes)" {
+		t.Errorf("msg = %q, want real's reason-plus-size form", res.Msg)
 	}
 }
 
@@ -103,7 +124,7 @@ func TestModuleUriPostReportsChanged(t *testing.T) {
 	url := "https://example.com"
 	cmd := uriCmd("POST", url, "", nil)
 	conn := newFakeConn(map[string]remoteexec.Result{
-		cmd: {RC: 0, Stdout: "created\nHTTPSTATUS:201"},
+		cmd: {RC: 0, Stdout: "HTTP/1.1 201 Created\r\nContent-Type: text/plain\r\nContent-Length: 7\r\n\r\ncreated\nHTTPSTATUS:201\nHTTPTIME:0.01\nHTTPURL:https://example.com"},
 	})
 	res, err := moduleURI(context.Background(), conn, map[string]any{
 		"url": url, "method": "post", "status_code": 201,
@@ -120,7 +141,7 @@ func TestModuleUriStatusMismatch(t *testing.T) {
 	url := "https://example.com"
 	cmd := uriCmd("GET", url, "", nil)
 	conn := newFakeConn(map[string]remoteexec.Result{
-		cmd: {RC: 0, Stdout: "not found\nHTTPSTATUS:404"},
+		cmd: {RC: 0, Stdout: "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 9\r\n\r\nnot found\nHTTPSTATUS:404\nHTTPTIME:0.01\nHTTPURL:https://example.com"},
 	})
 	res, err := moduleURI(context.Background(), conn, map[string]any{"url": url})
 	if err != nil {
@@ -180,7 +201,7 @@ func TestModuleUriHeadersAndBody(t *testing.T) {
 	url := "https://example.com"
 	cmd := uriCmd("PUT", url, "payload", map[string]any{"X-Token": "abc"})
 	conn := newFakeConn(map[string]remoteexec.Result{
-		cmd: {RC: 0, Stdout: "ok\nHTTPSTATUS:200"},
+		cmd: {RC: 0, Stdout: "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nok\nHTTPSTATUS:200\nHTTPTIME:0.01\nHTTPURL:https://example.com"},
 	})
 	res, err := moduleURI(context.Background(), conn, map[string]any{
 		"url": url, "method": "PUT", "body": "payload",
