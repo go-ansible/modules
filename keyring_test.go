@@ -157,21 +157,60 @@ func TestModuleKeyringMissingArgs(t *testing.T) {
 // from every command string.
 func TestKeyringKeepsSecretsOffTheCommandLine(t *testing.T) {
 	const kpw, upw = "KEYRING-SECRET-A", "USER-SECRET-B"
+	// Every state the module accepts, because the first version of this
+	// test drove `present` only -- and keyringDelete, which only `absent`
+	// reaches, kept the secret on the command line for another commit.
+	// `witness` is what makes each case prove it exercised ITS OWN path:
+	// without it a case that silently returned early would pass by
+	// finding no secret in no commands at all.
+	for _, tc := range []struct {
+		state   string
+		witness string
+	}{
+		{"present", "secret-tool store"},
+		{"absent", "secret-tool clear"},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			conn := newFakeConn(map[string]remoteexec.Result{})
+			_, _ = moduleKeyring(context.Background(), conn, map[string]any{
+				"service": "svc", "username": "user",
+				"keyring_password": kpw, "user_password": upw, "state": tc.state,
+			})
+			for _, c := range conn.Commands {
+				for _, secret := range []string{kpw, upw} {
+					if strings.Contains(c, secret) {
+						t.Errorf("a secret is in a command string, where ps can read it:\n  %s", c)
+					}
+				}
+			}
+			reached := false
+			for _, c := range conn.Commands {
+				if strings.Contains(c, tc.witness) {
+					reached = true
+				}
+			}
+			if !reached {
+				t.Fatalf("state %q never reached %q, so this case asserted nothing; commands: %q",
+					tc.state, tc.witness, conn.Commands)
+			}
+			if conn.Envs["KEYRING_PASSWORD"] != kpw {
+				t.Errorf("KEYRING_PASSWORD did not reach the environment: %q", conn.Envs["KEYRING_PASSWORD"])
+			}
+		})
+	}
+}
+
+// TestKeyringSetSendsTheUserPasswordThroughTheEnvironment is split out
+// because only `state: present` has a user password at all: folding it
+// into the table above would have meant asserting it for `absent` too,
+// where its absence is correct.
+func TestKeyringSetSendsTheUserPasswordThroughTheEnvironment(t *testing.T) {
+	const kpw, upw = "KEYRING-SECRET-A", "USER-SECRET-B"
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	_, _ = moduleKeyring(context.Background(), conn, map[string]any{
 		"service": "svc", "username": "user",
 		"keyring_password": kpw, "user_password": upw, "state": "present",
 	})
-	for _, c := range conn.Commands {
-		for _, secret := range []string{kpw, upw} {
-			if strings.Contains(c, secret) {
-				t.Errorf("a secret is in a command string, where ps can read it:\n  %s", c)
-			}
-		}
-	}
-	if conn.Envs["KEYRING_PASSWORD"] != kpw {
-		t.Errorf("KEYRING_PASSWORD did not reach the environment: %q", conn.Envs["KEYRING_PASSWORD"])
-	}
 	if conn.Envs["USER_PASSWORD"] != upw {
 		t.Errorf("USER_PASSWORD did not reach the environment: %q", conn.Envs["USER_PASSWORD"])
 	}

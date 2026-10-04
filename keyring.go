@@ -252,9 +252,19 @@ func keyringDelete(ctx context.Context, conn remoteexec.Connection, service, use
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool clear service " + qs + " username " + qu
 	macos := "security delete-generic-password -a " + qu + " -s " + qs
-	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
-
-	res, err := conn.Exec(ctx, cmd, nil)
+	// ⛔ SECURITY. Same exposure keyringGet and keyringSet had, and the
+	// one this module's own regression test MISSED: it drove `state:
+	// present` only, so the two paths that state reaches were fixed and
+	// this one -- reached by `state: absent` -- kept building
+	//
+	//	KEYRING_PASSWORD=<secret>; <dispatch>
+	//
+	// an assignment plus a second statement, so the shell stays alive
+	// with the secret in its argv. A test that drives one of a module's
+	// states proves nothing about the others; the test now drives both
+	// and asserts the deleting command was actually reached.
+	res, _, err := remoteexec.ExecWithEnv(ctx, conn, keyringDispatch(linux, macos),
+		map[string]string{"KEYRING_PASSWORD": keyringPassword}, nil)
 	if err != nil {
 		return Result{}, err
 	}
