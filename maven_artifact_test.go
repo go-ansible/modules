@@ -35,8 +35,8 @@ func TestModuleMavenArtifactDownloadsWhenMissing(t *testing.T) {
 	dest := "/opt/junit.jar"
 	url := mavenArtifactURL("https://repo1.maven.org/maven2", "junit", "junit", "4.11", "", "jar")
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"test -e " + shellQuote(dest): {RC: 1},
-		getURLCmd(dest, url):          {RC: 0},
+		"test -e " + shellQuote(dest):     {RC: 1},
+		getURLCmd(dest, dest, url, false): {RC: 0},
 	})
 	res, err := moduleMavenArtifact(context.Background(), conn, map[string]any{
 		"group_id": "junit", "artifact_id": "junit", "version": "4.11", "dest": dest,
@@ -75,8 +75,8 @@ func TestModuleMavenArtifactDownloadFails(t *testing.T) {
 	dest := "/opt/junit.jar"
 	url := mavenArtifactURL("https://repo1.maven.org/maven2", "junit", "junit", "4.11", "", "jar")
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"test -e " + shellQuote(dest): {RC: 1},
-		getURLCmd(dest, url):          {RC: 22, Stderr: "curl: (22) HTTP 404"},
+		"test -e " + shellQuote(dest):     {RC: 1},
+		getURLCmd(dest, dest, url, false): {RC: 22, Stderr: "curl: (22) HTTP 404"},
 	})
 	res, err := moduleMavenArtifact(context.Background(), conn, map[string]any{
 		"group_id": "junit", "artifact_id": "junit", "version": "4.11", "dest": dest,
@@ -93,8 +93,8 @@ func TestModuleMavenArtifactCustomRepositoryURL(t *testing.T) {
 	dest := "/opt/lib.jar"
 	url := "https://repo.company.com/maven/com/company/library-name/1.0/library-name-1.0.jar"
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"test -e " + shellQuote(dest): {RC: 1},
-		getURLCmd(dest, url):          {RC: 0},
+		"test -e " + shellQuote(dest):     {RC: 1},
+		getURLCmd(dest, dest, url, false): {RC: 0},
 	})
 	res, err := moduleMavenArtifact(context.Background(), conn, map[string]any{
 		"group_id": "com.company", "artifact_id": "library-name", "version": "1.0",
@@ -145,8 +145,8 @@ func TestModuleMavenArtifactMode(t *testing.T) {
 	dest := "/opt/junit.jar"
 	url := mavenArtifactURL("https://repo1.maven.org/maven2", "junit", "junit", "4.11", "", "jar")
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"test -e " + shellQuote(dest): {RC: 1},
-		getURLCmd(dest, url):          {RC: 0},
+		"test -e " + shellQuote(dest):     {RC: 1},
+		getURLCmd(dest, dest, url, false): {RC: 0},
 		"stat -c '%s|%a|%F' " + dest + " 2>/dev/null || stat -f '%z|%Lp|%HT' " + dest + " 2>/dev/null": {
 			RC: 0, Stdout: "10|644|regular file\n",
 		},
