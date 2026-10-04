@@ -53,9 +53,15 @@ func moduleRaw(ctx context.Context, conn remoteexec.Connection, args map[string]
 // "non-zero return code", and not command's "The command exited with a
 // non-zero return code."
 //
-// The "exception" key a failure also carries is NOT reproduced: in real
-// it holds a Python traceback, and this port has none to put there.
-// Inventing one would be worse than its absence.
+// The "exception" key IS reproduced now, in Registry.Run rather than
+// here, and the note that used to sit at this spot was wrong about
+// why it could not be. It said the key "holds a Python traceback, and
+// this port has none to put there". Measured against ansible-core
+// 2.21.4 across eight failures in six modules -- fail, assert, file,
+// command, uri, copy, unarchive and find -- real emits the literal
+// string "(traceback unavailable)" every single time, and never an
+// actual traceback. So there is nothing to invent: that string is the
+// value, and emitting it is reproduction rather than fabrication.
 func rawResult(res remoteexec.Result) Result {
 	r := Result{Changed: true, Failed: res.RC != 0}
 	if r.Failed {

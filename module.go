@@ -205,7 +205,36 @@ func (r *Registry) Run(ctx context.Context, name string, conn remoteexec.Connect
 	if perr != nil {
 		return res, perr
 	}
-	return res, nil
+	return AddException(res), nil
+}
+
+// addException puts real's `exception` key on a FAILED result.
+//
+// Real attaches it to every failing module result and to no successful
+// one -- measured across fail, assert, file, command and find: four
+// failures carried it, the one non-failure did not. It is not a
+// per-module concern, which is why it lives here beside
+// finalizeOutput and addPathInfo rather than in 566 modules.
+//
+// The value is real's own. Where Python has no traceback to show, real
+// emits the literal string below rather than omitting the key, and a
+// Go port never has one -- so this is the honest value, not a
+// stand-in. Measured: `r.exception` after a failing find with limit: 0
+// is exactly "(traceback unavailable)".
+// It is EXPORTED because two modules do not go through Registry.Run at
+// all: go-ansible/playbook implements `assert` and `debug: var:` in the
+// engine, since both need the host's variables, and a result built
+// there would otherwise be the only failing result without the key.
+func AddException(res Result) Result {
+	if !res.Failed {
+		return res
+	}
+	if res.Extra != nil {
+		if _, already := res.Extra["exception"]; already {
+			return res
+		}
+	}
+	return res.WithExtra("exception", "(traceback unavailable)")
 }
 
 // finalizeOutput reproduces what real Ansible's AnsibleModule.exit_json

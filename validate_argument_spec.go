@@ -61,11 +61,31 @@ func moduleValidateArgumentSpec(ctx context.Context, conn remoteexec.Connection,
 		}
 	}
 
+	// Real's action plugin echoes validate_args_context back on EVERY
+	// outcome, defaulting to an empty dict when the task did not set
+	// it: result['validate_args_context'] = self._task.args.get(...,
+	// {}). It was missing here entirely, so a playbook reading
+	// r.validate_args_context got an undefined variable.
+	ctxArg := map[string]any{}
+	if v, ok := args["validate_args_context"].(map[string]any); ok {
+		ctxArg = v
+	}
+
 	violations := validateArguments(spec, provided)
 	if len(violations) > 0 {
-		return Fail(strings.Join(violations, "; ")), nil
+		// Real: 'Validation of arguments failed:\n' joined by newlines,
+		// plus argument_errors as a list.
+		res := Fail("Validation of arguments failed:\n" + strings.Join(violations, "\n"))
+		errs := make([]any, len(violations))
+		for i, v := range violations {
+			errs[i] = v
+		}
+		return res.WithExtra("validate_args_context", ctxArg).
+			WithExtra("argument_errors", errs), nil
 	}
-	return Ok("argument spec validation passed"), nil
+	// Real's exact wording, measured: "The arg spec validation passed".
+	return Ok("The arg spec validation passed").
+		WithExtra("validate_args_context", ctxArg), nil
 }
 
 // validateArguments checks provided against spec, returning every

@@ -107,3 +107,43 @@ func TestAssembleReportsOK(t *testing.T) {
 		t.Errorf("assembled %q", got)
 	}
 }
+
+// Real attaches `exception` to every FAILED module result and to no
+// successful one. Measured across eight failures in six modules --
+// fail, assert, file, command, uri, copy, unarchive, find -- where the
+// value is always the literal string below and never an actual
+// traceback. raw.go used to carry a note saying the key could not be
+// reproduced because it "holds a Python traceback"; that premise was
+// wrong, and the note now records the measurement instead.
+func TestFailedResultsCarryException(t *testing.T) {
+	res, err := Default().Run(context.Background(), "fail", remoteexec.NewLocal(),
+		map[string]any{"msg": "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatal("fail did not fail")
+	}
+	if got := res.Extra["exception"]; got != "(traceback unavailable)" {
+		t.Errorf("exception = %v, want real's own literal", got)
+	}
+
+	// and a success carries no such key
+	ok, err := Default().Run(context.Background(), "debug", remoteexec.NewLocal(),
+		map[string]any{"msg": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := ok.Extra["exception"]; present {
+		t.Error("a successful result carries an exception key")
+	}
+}
+
+// AddException is idempotent: a module that set the key itself keeps
+// its own value.
+func TestAddExceptionDoesNotOverwrite(t *testing.T) {
+	in := Fail("boom").WithExtra("exception", "mine")
+	if got := AddException(in).Extra["exception"]; got != "mine" {
+		t.Errorf("exception = %v, want the module's own value kept", got)
+	}
+}

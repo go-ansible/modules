@@ -47,6 +47,17 @@ func moduleFind(ctx context.Context, conn remoteexec.Connection, args map[string
 	patterns := argStringList(args, "patterns")
 	recurse := argBool(args, "recurse", false)
 	fileType := argString(args, "file_type", "file")
+	// limit caps how many matches are collected. Real rejects a
+	// non-positive value by name rather than treating it as unlimited;
+	// unlimited is the ABSENCE of the option.
+	limit, hasLimit := 0, false
+	if v, ok := args["limit"]; ok && v != nil {
+		limit = argInt(args, "limit", 0)
+		if limit < 1 {
+			return Fail(fmt.Sprintf("limit cannot be %d (use None for unlimited)", limit)), nil
+		}
+		hasLimit = true
+	}
 
 	cmd, err := findCmd(paths, patterns, recurse, fileType)
 	if err != nil {
@@ -85,9 +96,29 @@ func moduleFind(ctx context.Context, conn remoteexec.Connection, args map[string
 		// to the caller even if the probe told us nothing else.
 		entry["path"] = line
 		files = append(files, entry)
+		if hasLimit && len(files) == limit {
+			break
+		}
 	}
 
-	out := Ok("").
+	// Real's find always reports a msg, and it is one of three --
+	// measured, and read from find.py's own exit path:
+	//
+	//   'All paths examined'                                (default)
+	//   'Limit of matches reached'                          (limit hit)
+	//   'Not all paths examined, check warnings for details' (a path was skipped)
+	//
+	// The skipped case comes LAST there and overrides the limit one.
+	// This returned an empty msg for every outcome.
+	msg := "All paths examined"
+	if hasLimit && len(files) == limit {
+		msg = "Limit of matches reached"
+	}
+	if len(skipped) > 0 {
+		msg = "Not all paths examined, check warnings for details"
+	}
+
+	out := Ok(msg).
 		WithExtra("files", files).
 		WithExtra("matched", len(files)).
 		WithExtra("examined", examined).
