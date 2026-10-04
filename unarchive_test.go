@@ -20,16 +20,27 @@ func TestUnarchiveCmd(t *testing.T) {
 		"/a/x.txz":     "tar xJf /a/x.txz -C /dest",
 		"/a/x.zip":     "unzip -o /a/x.zip -d /dest",
 	}
+	// The handler names are real's own Python handler classes, which it
+	// reports as r.handler -- measured: a .zip gives "ZipArchive".
+	handlers := map[string]string{
+		"/a/x.tar": "TarArchive", "/a/x.tar.gz": "TgzArchive", "/a/x.tgz": "TgzArchive",
+		"/a/x.tar.bz2": "TarBzipArchive", "/a/x.tbz2": "TarBzipArchive",
+		"/a/x.tar.xz": "TarXzArchive", "/a/x.txz": "TarXzArchive",
+		"/a/x.zip": "ZipArchive",
+	}
 	for in, want := range cases {
-		got, err := unarchiveCmd(in, "/dest")
+		got, handler, err := unarchiveCmd(in, "/dest")
 		if err != nil {
 			t.Fatalf("%s: %v", in, err)
 		}
 		if got != want {
 			t.Errorf("unarchiveCmd(%q) = %q, want %q", in, got, want)
 		}
+		if handler != handlers[in] {
+			t.Errorf("unarchiveCmd(%q) handler = %q, want %q", in, handler, handlers[in])
+		}
 	}
-	if _, err := unarchiveCmd("/a/x.rar", "/dest"); err == nil {
+	if _, _, err := unarchiveCmd("/a/x.rar", "/dest"); err == nil {
 		t.Fatal("want error for unrecognized extension")
 	}
 }
