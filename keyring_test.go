@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	remoteexec "github.com/go-remoteexec/transport"
@@ -16,18 +17,24 @@ func keyringGetCmdForTest(service, username, keyringPassword string) string {
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool lookup service " + qs + " username " + qu
 	macos := "security find-generic-password -a " + qu + " -s " + qs + " -w"
-	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
+	// ⛔ The command no longer carries the password: it goes in the
+	// process environment via ExecWithEnv, because an assignment
+	// followed by `;` keeps the shell alive and puts the secret in its
+	// argv for `ps` to read. These helpers failing when the prefix was
+	// removed is what proved it is gone.
+	_ = keyringPassword
+	return keyringDispatch(linux, macos)
 }
 
 func keyringSetCmdForTest(service, username, keyringPassword, userPassword string) string {
-	qs, qu, qp := shellQuote(service), shellQuote(username), shellQuote(userPassword)
+	qs, qu := shellQuote(service), shellQuote(username)
 	label := shellQuote(service + "/" + username)
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"printf %s \"$USER_PASSWORD\" | dbus-run-session -- secret-tool store --label=" + label +
 		" service " + qs + " username " + qu
-	macos := "security add-generic-password -a " + qu + " -s " + qs + " -w " + qp + " -U"
-	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; USER_PASSWORD=" + shellQuote(userPassword) + "; " +
-		keyringDispatch(linux, macos)
+	macos := "security add-generic-password -a " + qu + " -s " + qs + ` -w "$USER_PASSWORD" -U`
+	_, _ = keyringPassword, userPassword
+	return keyringDispatch(linux, macos)
 }
 
 func keyringDeleteCmdForTest(service, username, keyringPassword string) string {
@@ -35,7 +42,13 @@ func keyringDeleteCmdForTest(service, username, keyringPassword string) string {
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool clear service " + qs + " username " + qu
 	macos := "security delete-generic-password -a " + qu + " -s " + qs
-	return "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
+	// ⛔ The command no longer carries the password: it goes in the
+	// process environment via ExecWithEnv, because an assignment
+	// followed by `;` keeps the shell alive and puts the secret in its
+	// argv for `ps` to read. These helpers failing when the prefix was
+	// removed is what proved it is gone.
+	_ = keyringPassword
+	return keyringDispatch(linux, macos)
 }
 
 func TestModuleKeyringSetNew(t *testing.T) {
@@ -126,5 +139,40 @@ func TestModuleKeyringMissingArgs(t *testing.T) {
 	conn := newFakeConn(nil)
 	if _, err := moduleKeyring(context.Background(), conn, map[string]any{}); err == nil {
 		t.Fatal("want error for missing required args")
+	}
+}
+
+// ⛔ SECURITY REGRESSION TEST. keyring built
+//
+//	KEYRING_PASSWORD=<secret>; USER_PASSWORD=<secret>; <dispatch>
+//
+// An assignment followed by `;` is two statements, so the shell cannot
+// exec away and its argv carries both secrets for the command's whole
+// lifetime -- readable by any local user through `ps`. Demonstrated
+// upstream, where `/bin/sh -c MY_TOKEN=canary-… sleep 4; true` shows
+// the value while a prefix on a LONE command does not.
+//
+// The assertion is in both directions, because either alone passes for
+// the wrong reason: the secrets must be in the environment, AND absent
+// from every command string.
+func TestKeyringKeepsSecretsOffTheCommandLine(t *testing.T) {
+	const kpw, upw = "KEYRING-SECRET-A", "USER-SECRET-B"
+	conn := newFakeConn(map[string]remoteexec.Result{})
+	_, _ = moduleKeyring(context.Background(), conn, map[string]any{
+		"service": "svc", "username": "user",
+		"keyring_password": kpw, "user_password": upw, "state": "present",
+	})
+	for _, c := range conn.Commands {
+		for _, secret := range []string{kpw, upw} {
+			if strings.Contains(c, secret) {
+				t.Errorf("a secret is in a command string, where ps can read it:\n  %s", c)
+			}
+		}
+	}
+	if conn.Envs["KEYRING_PASSWORD"] != kpw {
+		t.Errorf("KEYRING_PASSWORD did not reach the environment: %q", conn.Envs["KEYRING_PASSWORD"])
+	}
+	if conn.Envs["USER_PASSWORD"] != upw {
+		t.Errorf("USER_PASSWORD did not reach the environment: %q", conn.Envs["USER_PASSWORD"])
 	}
 }

@@ -168,9 +168,21 @@ func keyringGet(ctx context.Context, conn remoteexec.Connection, service, userna
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"dbus-run-session -- secret-tool lookup service " + qs + " username " + qu
 	macos := "security find-generic-password -a " + qu + " -s " + qs + " -w"
-	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; " + keyringDispatch(linux, macos)
-
-	res, err := conn.Exec(ctx, cmd, nil)
+	// ⛔ SECURITY. This used to build
+	//
+	//	KEYRING_PASSWORD=<secret>; <dispatch>
+	//
+	// which is an assignment followed by a second statement, so the
+	// shell cannot exec away and its argv carries the secret for the
+	// command's whole lifetime -- readable by every local user through
+	// `ps`. Demonstrated upstream: `/bin/sh -c MY_TOKEN=canary-… sleep
+	// 4; true` shows the value. A prefix on a LONE command execs away
+	// and does not; this was not that shape.
+	//
+	// ExecWithEnv puts it in the process's own environment instead,
+	// which is what real Ansible's run_command does with environ_update.
+	res, _, err := remoteexec.ExecWithEnv(ctx, conn, keyringDispatch(linux, macos),
+		map[string]string{"KEYRING_PASSWORD": keyringPassword}, nil)
 	if err != nil {
 		return "", false, Result{}, err
 	}
@@ -185,16 +197,43 @@ func keyringGet(ctx context.Context, conn remoteexec.Connection, service, userna
 
 // keyringSet stores userPassword for service/username.
 func keyringSet(ctx context.Context, conn remoteexec.Connection, service, username, keyringPassword, userPassword string) (Result, error) {
-	qs, qu, qp := shellQuote(service), shellQuote(username), shellQuote(userPassword)
+	qs, qu := shellQuote(service), shellQuote(username)
 	label := shellQuote(service + "/" + username)
 	linux := "echo \"$KEYRING_PASSWORD\" | gnome-keyring-daemon --unlock >/dev/null 2>&1; " +
 		"printf %s \"$USER_PASSWORD\" | dbus-run-session -- secret-tool store --label=" + label +
 		" service " + qs + " username " + qu
-	macos := "security add-generic-password -a " + qu + " -s " + qs + " -w " + qp + " -U"
-	cmd := "KEYRING_PASSWORD=" + shellQuote(keyringPassword) + "; USER_PASSWORD=" + shellQuote(userPassword) + "; " +
-		keyringDispatch(linux, macos)
-
-	res, err := conn.Exec(ctx, cmd, nil)
+	// ⛔ A SECOND exposure, REAL and not fixed here, named rather than
+	// smoothed over. `security` takes the password in its own argv and
+	// offers no stdin form: measured, `printf %s pw | security
+	// add-generic-password … -w` (no value) stores NOTHING. The
+	// alternative is the Keychain API, which needs cgo, and this port
+	// is CGO_ENABLED=0. So on macOS the user password is visible in
+	// `ps` for as long as `security` runs -- short, but real.
+	//
+	// Documented the way rollbar-cli's own argv token is: an
+	// unavoidable gap of the CLI-substitution approach, stated so a
+	// reader can decide, not hidden. The Linux branch does NOT have
+	// it -- secret-tool reads the value from stdin.
+	// Read from the environment, not embedded as a literal. Two
+	// reasons, and the second is the one the test found:
+	//
+	//   - keyringDispatch builds BOTH branches into one shell string,
+	//     so a literal here put the password on the command line even
+	//     on LINUX, where this branch never runs;
+	//   - the shell's own argv is long-lived, `security`'s is not.
+	//
+	// What remains is `security`'s own argv at exec time, for as long
+	// as that one process runs. `security` has no stdin form --
+	// measured: `printf %s pw | security add-generic-password … -w`
+	// (no value) stores nothing -- and the Keychain API needs cgo,
+	// which this port does not use. Named rather than smoothed over,
+	// the way rollbar-cli's own argv token is.
+	macos := "security add-generic-password -a " + qu + " -s " + qs + ` -w "$USER_PASSWORD" -U`
+	// Both secrets move to the process environment, for the reason
+	// keyringGet above explains -- this was the worse of the two, with
+	// TWO passwords on one live shell's command line.
+	res, _, err := remoteexec.ExecWithEnv(ctx, conn, keyringDispatch(linux, macos),
+		map[string]string{"KEYRING_PASSWORD": keyringPassword, "USER_PASSWORD": userPassword}, nil)
 	if err != nil {
 		return Result{}, err
 	}

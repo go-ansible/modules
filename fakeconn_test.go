@@ -15,6 +15,9 @@ import (
 // remoteexec.Local connection instead (see the other _test.go files),
 // which is worth more.
 type fakeConn struct {
+	// Envs records what ExecEnv was given, so a test can assert a
+	// credential reached the environment rather than the command line.
+	Envs map[string]string
 	// on maps a command's exact string to a scripted (Result, error).
 	// A command not present here fails the test via t.Fatal from the
 	// caller's own assertions on Commands, not from fakeConn itself —
@@ -31,6 +34,25 @@ type fakeConn struct {
 
 func newFakeConn(on map[string]remoteexec.Result) *fakeConn {
 	return &fakeConn{on: on}
+}
+
+// ExecEnv makes fakeConn an EnvExecer, so a module using
+// remoteexec.ExecWithEnv exercises the SAFE path here rather than the
+// prefix fallback -- which matters because the whole point of that call
+// is to keep a credential off the command line. Without this the fake
+// would silently take the fallback and the tests would be asserting the
+// shape the code is trying to avoid.
+//
+// The environment is recorded so a test can assert a credential went
+// THERE and not into Commands.
+func (f *fakeConn) ExecEnv(ctx context.Context, cmd string, env map[string]string, stdin io.Reader) (remoteexec.Result, error) {
+	if f.Envs == nil {
+		f.Envs = map[string]string{}
+	}
+	for k, v := range env {
+		f.Envs[k] = v
+	}
+	return f.Exec(ctx, cmd, stdin)
 }
 
 func (f *fakeConn) Exec(ctx context.Context, cmd string, stdin io.Reader) (remoteexec.Result, error) {
