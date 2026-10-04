@@ -106,7 +106,11 @@ func moduleMavenArtifact(ctx context.Context, conn remoteexec.Connection, args m
 
 		changed := false
 		if !exists {
-			res, err := runStatus(ctx, conn, getURLCmd(dest, url))
+			// Straight to dest and unconditional, which is what this
+			// module did before getURLCmd grew a staging path and a
+			// conditional request for get_url's own sake: passing dest
+			// as the staged path keeps the behaviour identical.
+			res, err := runStatus(ctx, conn, getURLCmd(dest, dest, url, false))
 			if err != nil {
 				return Result{}, err
 			}
