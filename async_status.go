@@ -44,10 +44,20 @@ func moduleAsyncStatus(ctx context.Context, conn remoteexec.Connection, args map
 		return Result{}, err
 	}
 	if !found {
+		// Measured for `async_status: {jid: nope}`: real's msg is
+		// exactly "could not find job" (already matched) but its key
+		// set also carries results_file and the job's stdout/stderr --
+		// real reports ansible_job_id,changed,failed,finished,msg,
+		// results_file,started,stderr,stderr_lines,stdout,stdout_lines
+		// where this reported six of those eleven. stdout_lines and
+		// stderr_lines come from finalizeOutput.
 		return Fail("could not find job").
 			WithExtra("ansible_job_id", jid).
+			WithExtra("results_file", AsyncResultsFile(ctx, conn, jid)).
 			WithExtra("started", true).
-			WithExtra("finished", true), nil
+			WithExtra("finished", true).
+			WithExtra("stdout", "").
+			WithExtra("stderr", ""), nil
 	}
 	r := Ok("").
 		WithExtra("ansible_job_id", jid).
