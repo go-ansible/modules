@@ -48,8 +48,17 @@ func moduleSlurp(ctx context.Context, conn remoteexec.Connection, args map[strin
 		return Result{}, fmt.Errorf("slurp: %w", err)
 	}
 
-	r := Ok(src)
+	// Measured against ansible-core 2.21.4: slurp's exit_json carries
+	// content, encoding and SOURCE, and no msg at all --
+	//
+	//   module.exit_json(content=data, source=source, encoding=encoding)
+	//
+	// This returned Ok(src), which put the PATH in msg, and left source
+	// out. A playbook reading r.msg after a slurp was reading a file
+	// name, and one reading r.source got an undefined variable.
+	r := Result{NoMsg: true}
 	r = r.WithExtra("content", base64.StdEncoding.EncodeToString(data))
 	r = r.WithExtra("encoding", "base64")
+	r = r.WithExtra("source", src)
 	return r, nil
 }

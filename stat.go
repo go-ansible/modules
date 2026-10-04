@@ -29,7 +29,11 @@ func moduleStat(ctx context.Context, conn remoteexec.Connection, args map[string
 	if err != nil {
 		return Result{}, err
 	}
-	return Ok("").WithExtra("stat", dict), nil
+	// Real's stat exits with exit_json(changed=False, stat=output) and
+	// nothing else, so `r.msg` after a stat is UNDEFINED there. Ok("")
+	// emitted the key with an empty value, which is a different thing
+	// -- see Result.NoMsg.
+	return Result{NoMsg: true}.WithExtra("stat", dict), nil
 }
 
 type fileKind int

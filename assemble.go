@@ -90,9 +90,14 @@ fi`
 	}
 	changed := strings.Contains(res.Stdout, "ASSEMBLE_CHANGED")
 
-	out := Ok("")
+	// Real ends with a literal `result['msg'] = "OK"` before
+	// exit_json, changed or not -- measured, and visible in
+	// assemble.py's own "# Mission complete" line. An empty msg here
+	// was the one field of the key set below that carried the wrong
+	// value rather than being absent.
+	out := Ok("OK")
 	if changed {
-		out = Changed("")
+		out = Changed("OK")
 	}
 	out = out.WithExtra("src", src).WithExtra("dest", dest)
 	sums, err := fileSums(ctx, conn, dest)
