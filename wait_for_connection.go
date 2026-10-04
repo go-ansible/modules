@@ -49,11 +49,18 @@ func moduleWaitForConnection(ctx context.Context, conn remoteexec.Connection, ar
 		}
 	}
 
-	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
+	start := time.Now()
+	deadline := start.Add(time.Duration(timeout) * time.Second)
 	for {
 		res, err := conn.Exec(ctx, "true", nil)
 		if err == nil && res.RC == 0 {
-			return Ok("connection is usable"), nil
+			// Real's action plugin reports `elapsed` (whole seconds)
+			// and NO msg -- result['elapsed'] = elapsed.seconds, then
+			// return result. Measured key set: changed,elapsed,failed.
+			// This reported msg "connection is usable", a sentence real
+			// never emits, and no elapsed at all.
+			out := Result{NoMsg: true}
+			return out.WithExtra("elapsed", int(time.Since(start).Seconds())), nil
 		}
 		if !time.Now().Before(deadline) {
 			return Fail(fmt.Sprintf("wait_for_connection: timed out after %ds waiting for a usable connection", timeout)), nil

@@ -29,7 +29,17 @@ func moduleServiceFacts(ctx context.Context, conn remoteexec.Connection, args ma
 		return Result{}, err
 	}
 	if res.RC != 0 {
-		return Fail("service_facts: systemctl not found (only systemd-managed hosts are supported by this port)"), nil
+		// Real does not FAIL here, it SKIPS:
+		//
+		//	results = dict(skipped=True, msg="Failed to find any services. "
+		//	               "This can be due to privileges or some other configuration issue.")
+		//
+		// Measured key set: changed,failed,msg,skipped. A failed task
+		// stops a play that a skipped one does not, so the difference
+		// is not cosmetic -- this reported Failed and would have halted
+		// a playbook real lets through.
+		return Skipped("Failed to find any services. This can be due to privileges " +
+			"or some other configuration issue."), nil
 	}
 
 	out, err := run(ctx, conn, "systemctl list-units --type=service --all --no-legend --plain")

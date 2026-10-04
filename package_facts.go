@@ -54,7 +54,13 @@ func modulePackageFacts(ctx context.Context, conn remoteexec.Connection, args ma
 	case "dnf":
 		cmd = `rpm -qa --qf '%{NAME} %{VERSION}-%{RELEASE}\n'`
 	default:
-		return Fail("package_facts: no supported package manager found (looked for apt-get, dnf, yum)"), nil
+		// Real's exact wording, measured: it names the list it tried
+		// and mentions the Python library, which this port has no
+		// equivalent of -- so the second clause is dropped rather than
+		// claimed. The first clause is real's, verbatim.
+		return Fail("Could not detect a supported package manager from the following list: " +
+			"['apt-get', 'dnf', 'yum'], or the required Python library is not installed. " +
+			"Check warnings for details."), nil
 	}
 
 	res, err := runStatus(ctx, conn, cmd)

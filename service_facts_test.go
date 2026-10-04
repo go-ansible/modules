@@ -38,7 +38,17 @@ func TestModuleServiceFacts(t *testing.T) {
 	}
 }
 
-func TestModuleServiceFactsNoSystemd(t *testing.T) {
+// This test used to assert res.Failed, which pinned THIS PORT's
+// behaviour rather than real's. Measured against ansible-core 2.21.4
+// on a host with no systemd, real does not fail -- it SKIPS:
+//
+//	results = dict(skipped=True, msg="Failed to find any services. "
+//	               "This can be due to privileges or some other configuration issue.")
+//
+// and its key set is changed,failed,msg,skipped. The difference is not
+// cosmetic: a failed task stops a play that a skipped one does not, so
+// the old behaviour would halt a playbook real lets through.
+func TestModuleServiceFactsNoSystemdSkipsRatherThanFails(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"command -v systemctl >/dev/null 2>&1": {RC: 1},
 	})
@@ -46,8 +56,14 @@ func TestModuleServiceFactsNoSystemd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Failed {
-		t.Fatal("want failed: systemctl not found")
+	if res.Failed {
+		t.Error("reported failed; real skips, and a failure would halt a play real lets through")
+	}
+	if !res.Skipped {
+		t.Error("did not report skipped")
+	}
+	if res.Msg != "Failed to find any services. This can be due to privileges or some other configuration issue." {
+		t.Errorf("msg = %q, want real's own wording", res.Msg)
 	}
 }
 

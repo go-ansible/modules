@@ -78,6 +78,22 @@ echo %s
 // async_status in that same ambiguous case). done=true gives rc/
 // stdout/stderr, fetched only then (not on every poll, to avoid
 // hauling potentially large output over the wire while still waiting).
+// AsyncResultsFile resolves the path real reports as `results_file`:
+// the job's own file under the async directory. asyncDirExpr is a SHELL
+// expression ("$HOME/.ansible_async") rather than a path, so $HOME has
+// to be expanded on the TARGET -- reporting the unexpanded form would
+// be a different string than real's.
+//
+// One extra round trip, taken only where the value is actually
+// reported, which in practice is async_status's own result.
+func AsyncResultsFile(ctx context.Context, conn remoteexec.Connection, jid string) string {
+	out, err := run(ctx, conn, "printf %s "+asyncDirExpr+"/"+shellQuote(jid))
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
 func AsyncCheck(ctx context.Context, conn remoteexec.Connection, jid string) (found, done bool, rc int, stdout, stderr string, err error) {
 	d := asyncDirExpr + "/" + jid
 	probe := fmt.Sprintf(`d=%s
