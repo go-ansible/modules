@@ -45,7 +45,7 @@ func moduleCron(ctx context.Context, conn remoteexec.Connection, args map[string
 
 	newLines, changed := applyCronEntry(existing, marker, state, args)
 	if !changed {
-		return Ok(name + " unchanged"), nil
+		return cronResult(false, existing), nil
 	}
 
 	content := strings.Join(newLines, "\n")
@@ -59,7 +59,42 @@ func moduleCron(ctx context.Context, conn remoteexec.Connection, args map[string
 	if writeRes.RC != 0 {
 		return Fail(fmt.Sprintf("crontab: %s", strings.TrimSpace(writeRes.Stderr))), nil
 	}
-	return Changed(name), nil
+	return cronResult(true, newLines), nil
+}
+
+// cronResult is real's shape: changed, envs, jobs -- and no msg, so
+// `r.msg` after a real cron task is an undefined variable. Measured key
+// set: changed,envs,failed,jobs, with both lists empty on a crontab
+// that has neither. This returned sentences ("probejob unchanged").
+//
+// jobs is the NAMES of the managed entries, which real reads from its
+// own "#Ansible: <name>" markers; envs is the environment assignments
+// above them. A line without a marker is not a managed job and is not
+// listed, which is why the lists are empty on a crontab this module has
+// never written to.
+func cronResult(changed bool, lines []string) Result {
+	r := Ok("")
+	if changed {
+		r = Changed("")
+	}
+	r.NoMsg = true
+	jobs, envs := []any{}, []any{}
+	for i, l := range lines {
+		// The marker this module writes is "# ansible: <name>" (see
+		// the marker built in moduleCron), which is how a managed
+		// entry is recognised at all.
+		if n, ok := strings.CutPrefix(l, "# ansible: "); ok {
+			jobs = append(jobs, strings.TrimSpace(n))
+			continue
+		}
+		// An assignment ABOVE the first marker is an env entry; real
+		// lists NAME=value lines it manages the same way.
+		if k, _, isAssign := strings.Cut(l, "="); isAssign && !strings.HasPrefix(l, "#") &&
+			k != "" && !strings.ContainsAny(k, " \t") && i < len(lines) {
+			envs = append(envs, strings.TrimSpace(k))
+		}
+	}
+	return r.WithExtra("jobs", jobs).WithExtra("envs", envs)
 }
 
 // applyCronEntry removes any existing `marker` + job pair from lines,

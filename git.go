@@ -2,7 +2,6 @@ package modules
 
 import (
 	"context"
-	"fmt"
 
 	remoteexec "github.com/go-remoteexec/transport"
 )
@@ -36,7 +35,16 @@ func moduleGit(ctx context.Context, conn remoteexec.Connection, args map[string]
 		if _, err := run(ctx, conn, cmd); err != nil {
 			return Result{}, err
 		}
-		return Changed(dest + " cloned"), nil
+		// Real's git reports `before` and `after` -- the commit the
+		// checkout was at and the one it is at now -- and NO msg.
+		// Measured on a fresh clone: before is the EMPTY string (there
+		// was no prior checkout) and after is the cloned HEAD. This
+		// returned a sentence with the dest path in msg instead.
+		head, herr := run(ctx, conn, "git -C "+shellQuote(dest)+" rev-parse HEAD")
+		if herr != nil {
+			return Result{}, herr
+		}
+		return gitResult(true, "", head), nil
 	}
 
 	before, err := run(ctx, conn, "git -C "+shellQuote(dest)+" rev-parse HEAD")
@@ -59,8 +67,17 @@ func moduleGit(ctx context.Context, conn remoteexec.Connection, args map[string]
 	if err != nil {
 		return Result{}, err
 	}
-	if before == after {
-		return Ok(dest + " already at " + after), nil
+	return gitResult(before != after, before, after), nil
+}
+
+// gitResult is real's shape: before, after, changed, failed -- and no
+// msg, so `r.msg` after a real git task is an undefined variable.
+// Measured key set on a fresh clone: after,before,changed,failed.
+func gitResult(changed bool, before, after string) Result {
+	r := Ok("")
+	if changed {
+		r = Changed("")
 	}
-	return Changed(fmt.Sprintf("%s updated %s -> %s", dest, before, after)), nil
+	r.NoMsg = true
+	return r.WithExtra("before", before).WithExtra("after", after)
 }
