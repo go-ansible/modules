@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	remoteexec "github.com/go-remoteexec/transport"
@@ -231,5 +232,65 @@ func TestKnownHostsEchoesItsParameters(t *testing.T) {
 		if _, ok := res.Extra[k]; !ok {
 			t.Errorf("missing %q -- addPathInfo did not fire, so `path` is not in Extra", k)
 		}
+	}
+}
+
+// set_fact's real action plugin is `result['ansible_facts'] = facts;
+// return result` and sets no msg, so `r.msg` after a real set_fact is
+// undefined. This reported "facts set" -- a sentence real never emits.
+func TestSetFactReturnsNoMsg(t *testing.T) {
+	res, err := Default().Run(context.Background(), "set_fact", remoteexec.NewLocal(),
+		map[string]any{"k": "v"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.NoMsg {
+		t.Errorf("set_fact emits a msg key (it held %q); real emits none", res.Msg)
+	}
+	if res.Facts["k"] != "v" {
+		t.Errorf("facts = %v", res.Facts)
+	}
+	if res.Changed {
+		t.Error("set_fact reported changed; real never does")
+	}
+}
+
+// Real's pause reports twelve keys and no msg. Measured for
+// `pause: {seconds: 1}`:
+//
+//	rc=0  echo=True  delta=1  user_input=''  stderr=''
+//	stdout="Paused for 1.02 seconds"
+//
+// delta is the INT seconds; stdout carries the real elapsed to two
+// decimals. They are not the same number, so reusing one for both
+// would be wrong in whichever place it was reused.
+func TestPauseReportsRealsKeys(t *testing.T) {
+	res, err := Default().Run(context.Background(), "pause", remoteexec.NewLocal(),
+		map[string]any{"seconds": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.NoMsg {
+		t.Errorf("pause emits a msg key (it held %q); real emits none", res.Msg)
+	}
+	for _, k := range []string{"start", "stop", "delta", "echo", "rc", "user_input", "stdout", "stderr"} {
+		if _, ok := res.Extra[k]; !ok {
+			t.Errorf("missing %q that real reports", k)
+		}
+	}
+	// finalizeOutput derives these from stdout/stderr for every module
+	for _, k := range []string{"stdout_lines", "stderr_lines"} {
+		if _, ok := res.Extra[k]; !ok {
+			t.Errorf("missing %q -- finalizeOutput did not fire", k)
+		}
+	}
+	if res.Extra["delta"] != 1 {
+		t.Errorf("delta = %v, want the int seconds", res.Extra["delta"])
+	}
+	if s, _ := res.Extra["stdout"].(string); !strings.HasPrefix(s, "Paused for ") {
+		t.Errorf("stdout = %q, want real's own wording", s)
+	}
+	if res.Changed {
+		t.Error("pause reported changed; real reports false")
 	}
 }
