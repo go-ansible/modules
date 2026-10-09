@@ -10,8 +10,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-ansible/facts v0.18.1 h1:JOGqrY/XyKVChcS+bV9JDFaSP9vRv1WRzOJcF68aNxA=
 github.com/go-ansible/facts v0.18.1/go.mod h1:hz9HDPuHOEHLWOEEO8H6mqrPlvnU/txNHT7q/SlxWlY=
-github.com/go-ansible/template v0.33.0 h1:qV8vBLJ1kUzRtGuTD25K2mamIpwI3mIyB+pyl5T1LIY=
-github.com/go-ansible/template v0.33.0/go.mod h1:SebAw7RKNIMBaRojuqJW+hOodbLrfjyulcWjV3s0kPo=
+github.com/go-ansible/template v0.33.2 h1:mV9c5GGmENTp+qKy7wxbzEz/Fc+KLqUydLWskLsWI9o=
+github.com/go-ansible/template v0.33.2/go.mod h1:SebAw7RKNIMBaRojuqJW+hOodbLrfjyulcWjV3s0kPo=
 github.com/go-encryptions/unixcrypt v0.2.0 h1:y7jPRn7D22dKkAS54XF+IndhCw0Vyf4uoEb2YZLroLg=
 github.com/go-encryptions/unixcrypt v0.2.0/go.mod h1:b9Ng6kn/dLtVXduigJ5Lc3rcpaWaiYVYRilBn+n4VaE=
 github.com/go-logr/logr v1.4.2 h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=
