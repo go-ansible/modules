@@ -17,9 +17,8 @@ import (
 // only visible in the implementation, not EXAMPLES/OPTIONS).
 //
 // Args: name (string, required) — the parent branch's SSH or HTTP
-// address; real bzr aliases this from `parent`, but this port only
-// accepts `name`, matching acl.go's own documented "args are already
-// resolved by the caller before reaching a module" convention; dest
+// address (alias `parent`, as in real bzr; Registry.Run copies it onto
+// `name` before this runs — see aliases.go); dest
 // (string, required); version (string, default "head") — a bzr revno
 // or revid; force (bool, default false) — discard local modifications
 // rather than failing when present; executable (string, default

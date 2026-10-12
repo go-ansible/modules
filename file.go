@@ -10,7 +10,8 @@ import (
 // moduleFile implements (a subset of) Ansible's `file` module: manages
 // a path's existence/type and permissions.
 //
-// Args: path (string, required); state (file|directory|absent|touch|
+// Args: path (string, required; aliases dest and name, resolved by
+// Registry.Run -- see aliases.go); state (file|directory|absent|touch|
 // link, default "file"); mode (octal string); owner; group; src (the
 // link target, for state=link).
 func moduleFile(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {

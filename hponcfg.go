@@ -20,9 +20,11 @@ import (
 // writing this file (its `command_args_formats`: `src` -> `-f <path>`,
 // `verbose` -> `-v` when true, `minfw` -> `-m <value>`).
 //
-// Args: path (string, required; aliased src in real hponcfg — this
-// port's own caller is expected to have already resolved the alias, per
-// this package's own convention of taking already-rendered arguments) —
+// Args: path (string, required; `src` is accepted too and read when
+// path is absent — real hponcfg.py's argument_spec is
+// src=dict(aliases=["path"]), so with both given real also uses path's
+// value; this module resolves that itself rather than through
+// aliases.go, see the note there) —
 // the RIBCL XML file's path on the TARGET (this port's Connection
 // reaches the target directly; there is no separate control-node-to-
 // target copy step the way real Ansible's own module-argument transfer

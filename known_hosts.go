@@ -10,10 +10,9 @@ import (
 // module: adds or removes an SSH host key line in a known_hosts-style
 // file.
 //
-// Args: name (string, required) — the host (aliased from `host` in
-// real Ansible; this port only accepts `name`, since args here are
-// already resolved by the caller before reaching a module — see
-// module.go's doc comment); key (string, required when state=present)
+// Args: name (string, required) — the host (alias `host`, as in real
+// Ansible; Registry.Run copies it onto `name` before this runs — see
+// aliases.go); key (string, required when state=present)
 // — the full known_hosts line content (hostname/pattern plus key type
 // plus key data, exactly as it would appear in the file); path
 // (string, default "~/.ssh/known_hosts"); state (present|absent,

@@ -19,9 +19,8 @@ import (
 // rotation-run result). Actually running logrotate is out of scope for
 // this module, same as it is for real community.general.logrotate.
 //
-// Args: name (string, required, aliased `config_name` upstream — this
-// port only accepts `name`, per this package's standing convention of
-// args already being resolved by the caller, see known_hosts.go);
+// Args: name (string, required, alias `config_name` as upstream —
+// Registry.Run copies it onto `name` before this runs, see aliases.go);
 // config_dir (string, default "/etc/logrotate.d"); state (present|
 // absent, default "present"); enabled (bool) — false renames the
 // managed file to "<name>.disabled" instead of "<name>"; backup (bool,

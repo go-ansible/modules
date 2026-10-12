@@ -11,17 +11,16 @@ import (
 // removes, or queries a POSIX ACL entry on a file or directory via the
 // `setfacl`/`getfacl` commands.
 //
-// Args: path (string, required — real acl aliases this from `name`;
-// this port only accepts `path`, since args here are already resolved
-// by the caller before reaching a module — see known_hosts.go's doc
-// comment for the same convention); entity (string, optional) — the
+// Args: path (string, required — alias `name`, as in real acl;
+// Registry.Run copies it onto `path` before this runs — see
+// aliases.go); entity (string, optional) — the
 // user/group the ACL applies to; etype (user|group|mask|other,
 // required for state=present/absent unless entry is given); permissions
 // (string, optional) — e.g. "rwx", required for state=present unless
 // entry is given; entry (string, optional) — real acl's deprecated raw
 // "etype:qualifier:perms" form, used verbatim for state=present; state
 // (present|absent|query, default "query"); recursive (bool, default
-// false) — adds `-R`; default (bool, default false) — act on the
+// false, alias recurse) — adds `-R`; default (bool, default false) — act on the
 // directory's default ACL instead of its access ACL; follow (bool,
 // default true) — when false, adds `-h` (act on a symlink itself
 // rather than its target); recalculate_mask (default|mask|no_mask,
