@@ -14,7 +14,9 @@ import (
 // absent from) a file, wrapped between two marker-comment lines so a
 // later run can find and replace exactly the block it wrote.
 //
-// Args: path (string, required); block (string, default "" — an empty
+// Args: path (string, required; aliases dest, destfile and name,
+// resolved by Registry.Run -- see aliases.go); block (string, alias
+// content, default "" — an empty
 // block is treated as state=absent regardless of the state argument,
 // per this batch's task spec; real ansible.builtin.blockinfile instead
 // inserts an empty marked block in that case, so this is a deliberate

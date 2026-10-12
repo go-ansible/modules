@@ -99,9 +99,13 @@ func (r Result) WithExtra(key string, value any) Result {
 // Func is a module's entry point. ctx carries cancellation/timeout;
 // conn is already connected to the task's target; args is the task's
 // parameters, already Jinja2-rendered by the caller (this package never
-// templates anything itself). A non-nil error means the module could
-// not determine an outcome at all (a transport failure); an expected
-// failure is a Result with Failed=true and a nil error.
+// templates anything itself). When the Func is reached through
+// Registry.Run, the argument aliases listed for it in moduleArgAliases
+// have also been copied onto their canonical names (see
+// resolveAliases); a Func called directly gets args exactly as given. A
+// non-nil error means the module could not determine an outcome at all
+// (a transport failure); an expected failure is a Result with
+// Failed=true and a nil error.
 type Func func(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error)
 
 // Registry maps module names to their Func.
@@ -194,10 +198,16 @@ func (r *Registry) Run(ctx context.Context, name string, conn remoteexec.Connect
 	if !ok {
 		return Fail(fmt.Sprintf("the module %s was not found", name)), nil
 	}
+	// Argument aliases (file's dest/name for path, and the rest of
+	// moduleArgAliases) are resolved here, once, before the module runs
+	// -- the step real's AnsibleModule performs on module.params. No
+	// module resolves the aliases in that table itself.
+	args, aliasWarnings := resolveAliases(name, args)
 	res, err := fn(ctx, conn, args)
 	if err != nil {
 		return res, err
 	}
+	res = withWarnings(res, aliasWarnings)
 	// Both halves of real's _return_formatted, which runs on EVERY
 	// result -- from exit_json and fail_json alike, so a FAILED result
 	// gets them too.

@@ -12,8 +12,9 @@ import (
 // match of a regexp in a file's content with a replacement string
 // (Go's regexp $1/${name} backreference syntax).
 //
-// Args: path (string, required); regexp (string, required); replace
-// (string, default "").
+// Args: path (string, required; aliases dest, destfile and name,
+// resolved by Registry.Run -- see aliases.go); regexp (string,
+// required); replace (string, default "").
 func moduleReplace(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	path, err := requireString(args, "path")
 	if err != nil {

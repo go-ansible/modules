@@ -12,11 +12,11 @@ import (
 // a Subversion repository — the svn counterpart to git.go, following
 // its same shape.
 //
-// Args: repo (string, required — real subversion also accepts this as
-// `name`/`repository`; this port only accepts `repo`, since aliasing is
-// resolved by the caller before args reach a module — see module.go's
-// package doc comment); dest (string, required); revision (string,
-// default "HEAD" — a real svn revision keyword/number); export (bool,
+// Args: repo (string, required — aliases `name`/`repository`, as in
+// real subversion; Registry.Run copies them onto `repo` before this
+// runs — see aliases.go); dest (string, required); revision (string,
+// default "HEAD", aliases `rev`/`version` — a real svn revision
+// keyword/number); export (bool,
 // default false) — export a clean tree with no .svn metadata instead
 // of a working checkout.
 //

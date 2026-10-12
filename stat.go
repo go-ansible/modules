@@ -12,7 +12,10 @@ import (
 // moduleStat implements Ansible's `stat` module: reports whether a path
 // exists and, if so, its size/mode/type. Never changes anything.
 //
-// Args: path (string, required).
+// Args: path (string, required; aliases dest and name, resolved by
+// Registry.Run -- see aliases.go); follow (default false); get_checksum
+// (default true); get_mime (default true; aliases mime, mime_type,
+// mime-type).
 func moduleStat(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	path, err := requireString(args, "path")
 	if err != nil {

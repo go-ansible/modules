@@ -13,13 +13,16 @@ import (
 // moduleLineinfile implements Ansible's `lineinfile` module: ensures a
 // particular line is present or absent in a file.
 //
-// Args: path (required); line (required with state=present); regexp;
+// Args: path (required; aliases dest, destfile and name); line
+// (required with state=present; alias value); regexp (alias regex);
 // search_string (a SUBSTRING, not a pattern); insertafter and
 // insertbefore (a pattern, or the words EOF/BOF); backrefs; firstmatch;
 // state (present|absent, default present); create (default false).
 // insertbefore|insertafter, regexp|search_string and
 // backrefs|search_string are mutually exclusive, as they are in real's
-// own argument spec.
+// own argument spec. The aliases are resolved by Registry.Run before
+// this runs (see aliases.go), so the mutual-exclusion check below sees
+// `regex` as `regexp`, as real's does.
 //
 // Three behaviours here are measured against ansible-core 2.21.4
 // rather than inferred, because the reasonable guess is wrong in each:
