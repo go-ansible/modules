@@ -58,7 +58,7 @@ func TestModulePipCustomExecutable(t *testing.T) {
 
 func TestModuleUserModifyExisting(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
-		"getent passwd bob":        {RC: 0},
+		"getent passwd bob":        {RC: 0, Stdout: "bob:x:1000:1000::/home/bob:/bin/sh\n"},
 		"usermod -s /bin/bash bob": {RC: 0},
 	})
 	res, err := moduleUser(context.Background(), conn, map[string]any{"name": "bob", "shell": "/bin/bash"})
@@ -73,6 +73,7 @@ func TestModuleUserModifyExisting(t *testing.T) {
 func TestModuleUserSystemNoCreateHome(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"getent passwd svc": {RC: 2},
+		"getent group svc":  {RC: 2},
 	})
 	res, err := moduleUser(context.Background(), conn, map[string]any{
 		"name": "svc", "system": true, "create_home": false, "home": "/opt/svc",
@@ -85,8 +86,8 @@ func TestModuleUserSystemNoCreateHome(t *testing.T) {
 		t.Fatal("want changed")
 	}
 	want := "useradd -M -r -d /opt/svc -G a,b svc"
-	if conn.Commands[1] != want {
-		t.Fatalf("cmd = %q, want %q", conn.Commands[1], want)
+	if conn.Commands[2] != want {
+		t.Fatalf("cmd = %q, want %q", conn.Commands[2], want)
 	}
 }
 
