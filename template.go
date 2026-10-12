@@ -15,7 +15,12 @@ import (
 // writes the result to dest, idempotently.
 //
 // Args: src (string, required) — local template file path; dest
-// (string, required); mode (octal string); _vars (map[string]any) —
+// (string, required); mode (octal string); owner; group; force (bool,
+// default true) — owner, group and force behave exactly as copy's
+// (see moduleCopy), because real's template action hands the rendered
+// file to the copy action with the task's other arguments intact; the
+// template is still rendered first, so a broken one fails even when
+// force: false would skip the write; _vars (map[string]any) —
 // the full variable scope to render with, distinct from this module's
 // own args (matching Ansible's template action plugin, which renders
 // against the whole variable scope, not just its own arguments — the
@@ -35,6 +40,8 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 	if err != nil {
 		return Result{}, err
 	}
+	owner := argString(args, "owner", "")
+	group := argString(args, "group", "")
 	vars, _ := args["_vars"].(map[string]any)
 	if vars == nil {
 		vars = map[string]any{}
@@ -55,6 +62,16 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 	rendered, err := engine.Render(string(raw), vars)
 	if err != nil {
 		return Result{}, fmt.Errorf("template: rendering %q: %w", src, err)
+	}
+
+	if !argBool(args, "force", true) {
+		// Real reports its local render file here (a per-run temporary
+		// named after the template); the template's own path is the
+		// nearest stable stand-in, and like copy's staging src it is
+		// never comparable between the two sides anyway.
+		if res, skipped, err := forceFalseSkip(ctx, conn, dest, src); err != nil || skipped {
+			return res, err
+		}
 	}
 
 	// The template is still rendered in check mode — that is most of what
@@ -107,20 +124,15 @@ func moduleTemplate(ctx context.Context, conn remoteexec.Connection, args map[st
 		changed = true
 	}
 
-	if mode != nil {
-		info, err := statPath(ctx, conn, dest)
-		if err != nil {
-			return Result{}, err
+	attrsChanged, err := applyFileAttrs(ctx, conn, dest, mode, owner, group, check)
+	if err != nil {
+		return Result{}, err
+	}
+	if attrsChanged {
+		if check {
+			return templateResult(dest, true).WithDiff(diff), nil
 		}
-		if info == nil || info.mode != *mode {
-			if check {
-				return templateResult(dest, true).WithDiff(diff), nil
-			}
-			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(dest))); err != nil {
-				return Result{}, err
-			}
-			changed = true
-		}
+		changed = true
 	}
 
 	out := templateResult(dest, changed).WithDiff(diff)
