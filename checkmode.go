@@ -43,12 +43,24 @@ var checkModeSupport = map[string]bool{
 	"find":  true,
 	"slurp": true,
 
-	// A notification sender that real declares supports_check_mode=True
-	// and that reports here what it WOULD have posted without posting
-	// it. bigpanda is the first; the other senders in this package
-	// implement the same branch but are not listed yet, so the engine
-	// still skips them, which is the safe direction.
-	"bigpanda": true,
+	// Notification senders, all four measured against their real
+	// sources: each declares supports_check_mode=True there, and each
+	// already implemented real's own dry-run behaviour here while being
+	// absent from this list -- so the engine skipped the branch instead
+	// of running it. Being absent is the safe default, not a correct
+	// one, and TestEveryCheckModeImplementationIsRegistered now reads
+	// the sources rather than trusting this list to stay in step.
+	//
+	// They do not all do the same thing, which is the point of porting
+	// each rather than declaring support: bigpanda and google_chat
+	// report changed=True and send nothing, while cisco_webex GETs
+	// /people/me and discord GETs the webhook -- real's own read-only
+	// probes, not skips.
+	"bigpanda":    true,
+	"cisco_webex": true,
+	"discord":     true,
+	"google_chat": true,
+	"telegram":    true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,
