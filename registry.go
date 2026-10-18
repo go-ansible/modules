@@ -18,6 +18,7 @@ func registerBuiltins(r *Registry) {
 	r.Register("set_fact", moduleSetFact)
 	r.Register("cron", moduleCron)
 	r.Register("user", moduleUser)
+	r.Register("grove", moduleGrove)
 	r.Register("group", moduleGroup)
 	r.Register("systemd", moduleSystemd)
 	r.Register("service", moduleSystemd) // "service" is systemd's classic alias on modern distros
@@ -26,6 +27,7 @@ func registerBuiltins(r *Registry) {
 	r.Register("git", moduleGit)
 	r.Register("ping", modulePing)
 	r.Register("slurp", moduleSlurp)
+	r.Register("telegram", moduleTelegram)
 	r.Register("tempfile", moduleTempfile)
 	r.Register("fetch", moduleFetch)
 	r.Register("find", moduleFind)
@@ -330,6 +332,7 @@ func registerBuiltins(r *Registry) {
 	r.Register("ohai", moduleOhai)
 	r.Register("cloud_init_data_facts", moduleCloudInitDataFacts)
 	r.Register("sssd_info", moduleSssdInfo)
+	r.Register("nexmo", moduleNexmo)
 	r.Register("nginx_status_info", moduleNginxStatusInfo)
 
 	// More Consul.
