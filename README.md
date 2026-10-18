@@ -34,18 +34,30 @@ every registered module name; `reg.Register` adds or overrides one.
 ## Security
 
 A module here composes a shell command, so a value that reaches a command
-string reaches a shell. Two controls, both mechanical rather than careful:
+string reaches a shell. Three controls, all mechanical rather than careful:
 
 - **Quoting.** Every interpolated value goes through this package's
-  `shellQuote` — 1 715 call sites. *Being careful* does not scale to 608
-  files, and a missed site is indistinguishable from a deliberate one until
-  somebody looks.
+  `shellQuote` — 1 718 call sites across 620 non-test files on
+  2026-10-18 (`grep -o 'shellQuote(' *.go | wc -l`). *Being careful* does
+  not scale to that, and a missed site is indistinguishable from a
+  deliberate one until somebody looks. The numbers are given with the
+  command that produced them because they drift with every batch; re-run
+  it rather than trusting the figure.
 - **Credentials in the environment**, via `transport`'s `ExecWithEnv`, which
   is what real Ansible does with `run_command`'s `environ_update`. Never a
   secret in `argv`, where `ps` shows it to every local user.
+- **Credentials on stdin** for the HTTP modules, which have no vendor CLI
+  and so reach their API with `curl` on the target. The command is only
+  `curl -s -K - --max-time N -w …`: the url, the headers, the body and any
+  `user =` basic-auth pair travel through curl's config file on **stdin**.
+  A webhook url often *is* the credential — `rocketchat`'s token is two of
+  its path segments — so this is not only about `-u` and `-H`. The test
+  helper `assertSecretsOffArgv` carries its own control: each secret must
+  appear on stdin, so it cannot pass on a module that simply never sent
+  one.
 
-An audit of this library found one breach of each, both fixed in v0.80.0 and
-v0.80.1: `async_status`'s `jid` was interpolated **unquoted** into an
+An audit of this library found one breach of each of the first two, both
+fixed in v0.80.0 and v0.80.1: `async_status`'s `jid` was interpolated **unquoted** into an
 `rm -rf`, and `keyring` built its passwords into a *two-statement* command,
 where the shell cannot `exec` away and holds them in its `argv`. The port's
 remaining unavoidable exposures — macOS `security`'s own `argv`, and two

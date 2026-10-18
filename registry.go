@@ -939,4 +939,15 @@ func registerBuiltins(r *Registry) {
 
 	// IP2Location, via ip2locationio.
 	r.Register("ip2location_info", moduleIp2locationInfo)
+
+	// community.general collection (batch 14, 3 more of 577 modules): the
+	// three remaining notification senders whose transport is a plain
+	// webhook POST -- no vendor CLI exists for any of them, so each goes
+	// through curl ON THE TARGET like the other webhook senders here,
+	// with every credential on stdin and none in argv.
+
+	// Campfire, BigPanda and Rocket.Chat, via curl on the target.
+	r.Register("campfire", moduleCampfire)
+	r.Register("bigpanda", moduleBigpanda)
+	r.Register("rocketchat", moduleRocketchat)
 }
