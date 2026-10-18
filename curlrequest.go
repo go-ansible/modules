@@ -37,13 +37,14 @@ import (
 // curlReq describes one request. Every field that could carry a
 // credential -- URL, Query, Form, JSON -- is sent on STDIN, never argv.
 type curlReq struct {
-	Method  string      // "GET" or "POST"
-	URL     string      // for a webhook or path-token service this IS the credential
-	Query   [][2]string // appended as a query string; nexmo puts its api_secret here
-	Form    [][2]string // application/x-www-form-urlencoded body
-	JSON    string      // raw JSON body, when the service wants one
-	Headers [][2]string // extra request headers
-	Timeout int         // seconds; 30 when zero
+	Method    string      // "GET" or "POST"
+	URL       string      // for a webhook or path-token service this IS the credential
+	Query     [][2]string // appended as a query string; nexmo puts its api_secret here
+	Form      [][2]string // application/x-www-form-urlencoded body
+	JSON      string      // raw JSON body, when the service wants one
+	Headers   [][2]string // extra request headers
+	BasicAuth string      // "user:password"; campfire sends its token this way
+	Timeout   int         // seconds; 30 when zero
 }
 
 // curlDo runs one request through curl ON THE TARGET and returns the
@@ -83,7 +84,22 @@ func curlDo(ctx context.Context, conn remoteexec.Connection, req curlReq) (body 
 	cfg.WriteString("url = \"" + curlConfigEscape(endpoint) + "\"\n")
 	cfg.WriteString("request = \"" + curlConfigEscape(req.Method) + "\"\n")
 	for _, h := range req.Headers {
+		if h[1] == "" {
+			// "Name:" with nothing after the colon is curl's own way of
+			// REMOVING a header it would otherwise add by itself. The
+			// caller wants that header absent, which is not the same as
+			// wanting it empty -- rocketchat's pre-7.4.0 body is sent by
+			// real with no Content-Type at all, and curl would supply
+			// one.
+			cfg.WriteString("header = \"" + curlConfigEscape(h[0]+":") + "\"\n")
+			continue
+		}
 		cfg.WriteString("header = \"" + curlConfigEscape(h[0]+": "+h[1]) + "\"\n")
+	}
+	if req.BasicAuth != "" {
+		// Same directive infinityCurl uses, and for the same reason:
+		// -u would put the credential in argv.
+		cfg.WriteString("user = \"" + curlConfigEscape(req.BasicAuth) + "\"\n")
 	}
 	switch {
 	case len(req.Form) > 0:

@@ -18,6 +18,7 @@ type curlConn struct {
 	body     string // may carry the \nHTTPSTATUS: trailer
 	rc       int
 	noCurl   bool
+	hostname string // answer for a bare `hostname`, when a module asks
 	Commands []string
 	Stdins   []string
 	calls    int
@@ -28,6 +29,14 @@ func (c *curlConn) Exec(ctx context.Context, cmd string, stdin io.Reader) (remot
 	if stdin != nil {
 		b, _ := io.ReadAll(stdin)
 		c.Stdins = append(c.Stdins, string(b))
+	}
+	if cmd == "hostname" {
+		// bigpanda asks the TARGET for its name; an empty answer here
+		// would be indistinguishable from the module not asking.
+		if c.hostname == "" {
+			return remoteexec.Result{RC: 1, Stderr: "no hostname scripted on this fake"}, nil
+		}
+		return remoteexec.Result{RC: 0, Stdout: c.hostname + "\n"}, nil
 	}
 	if strings.Contains(cmd, "command -v curl") {
 		if c.noCurl {
@@ -231,4 +240,19 @@ func TestTelegramFailureKeepsTheTokenOutOfTheMessage(t *testing.T) {
 	if res.Extra["telegram_error"] != "chat not found" {
 		t.Errorf("telegram_error = %v, want real's description field", res.Extra["telegram_error"])
 	}
+}
+
+// curlConfigUnescape is curlConfigEscape's inverse, so a test can read
+// back the body the module wrote rather than matching substrings of it.
+func curlConfigUnescape(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++
+			b.WriteByte(s[i])
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }

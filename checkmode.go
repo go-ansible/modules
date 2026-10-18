@@ -42,6 +42,13 @@ var checkModeSupport = map[string]bool{
 	"stat":  true,
 	"find":  true,
 	"slurp": true,
+
+	// A notification sender that real declares supports_check_mode=True
+	// and that reports here what it WOULD have posted without posting
+	// it. bigpanda is the first; the other senders in this package
+	// implement the same branch but are not listed yet, so the engine
+	// still skips them, which is the safe direction.
+	"bigpanda": true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,
