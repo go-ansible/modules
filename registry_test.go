@@ -113,7 +113,7 @@ func TestRegistryDefault(t *testing.T) {
 		"pip_package_info", "pipx", "pipx_info", "pkg5", "pkg5_publisher",
 		"pkgin", "pkgng", "pkgutil", "pmem", "pnpm", "portage", "portinstall",
 		"pritunl_org", "pritunl_org_info", "pritunl_user", "pritunl_user_info",
-		"pulp_repo", "puppet", "python_requirements_info", "raw", "read_csv",
+		"pulp_repo", "puppet", "pushover", "python_requirements_info", "raw", "read_csv",
 		"reboot", "redfish_command", "redfish_config", "redfish_info", "redhat_subscription", "redis", "redis_data",
 		"redis_data_incr", "redis_data_info", "redis_info", "replace",
 		"rhel_facts", "rhel_rpm_ostree", "rhsm_release", "rhsm_repository",
