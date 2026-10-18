@@ -3,10 +3,10 @@ module github.com/go-ansible/modules
 go 1.27.1
 
 require (
-	github.com/go-ansible/facts v0.18.2
+	github.com/go-ansible/facts v0.19.0
 	github.com/go-ansible/template v0.33.2
 	github.com/go-regexp/engine v0.3.0
-	github.com/go-remoteexec/transport v0.5.0
+	github.com/go-remoteexec/transport v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -22,8 +22,8 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
