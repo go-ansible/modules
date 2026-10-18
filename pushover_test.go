@@ -2,41 +2,9 @@ package modules
 
 import (
 	"context"
-	"io"
 	"strings"
 	"testing"
-
-	remoteexec "github.com/go-remoteexec/transport"
 )
-
-// pushoverConn answers the curl-presence probe and then any curl
-// invocation with a scripted body, recording what reached argv and what
-// reached stdin -- which is the distinction the whole design turns on.
-type pushoverConn struct {
-	remoteexec.Connection
-	body     string
-	rc       int
-	noCurl   bool
-	Commands []string
-	Stdins   []string
-}
-
-func (c *pushoverConn) Exec(ctx context.Context, cmd string, stdin io.Reader) (remoteexec.Result, error) {
-	c.Commands = append(c.Commands, cmd)
-	if stdin != nil {
-		b, _ := io.ReadAll(stdin)
-		c.Stdins = append(c.Stdins, string(b))
-	}
-	if strings.Contains(cmd, "command -v curl") {
-		if c.noCurl {
-			return remoteexec.Result{RC: 1}, nil
-		}
-		return remoteexec.Result{RC: 0, Stdout: "/usr/bin/curl\n"}, nil
-	}
-	return remoteexec.Result{RC: c.rc, Stdout: c.body}, nil
-}
-
-func (c *pushoverConn) Close() error { return nil }
 
 const (
 	poToken = "TOKEN-aaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -54,7 +22,7 @@ func pushoverArgs() map[string]any {
 // Real's success message is "message sent successfully: " + the raw
 // body, and changed is FALSE: sending a notification is not a change.
 func TestPushoverSendsAndReportsRealsMessage(t *testing.T) {
-	conn := &pushoverConn{body: `{"status":1}` + "\nHTTPSTATUS:200"}
+	conn := &curlConn{body: `{"status":1}` + "\nHTTPSTATUS:200"}
 	res, err := modulePushover(context.Background(), conn, pushoverArgs())
 	if err != nil {
 		t.Fatal(err)
@@ -74,25 +42,12 @@ func TestPushoverSendsAndReportsRealsMessage(t *testing.T) {
 // line. They are form fields, so the whole body travels on stdin
 // through curl's own -K - config.
 func TestPushoverKeepsBothSecretsOffTheCommandLine(t *testing.T) {
-	conn := &pushoverConn{body: "ok\nHTTPSTATUS:200"}
+	conn := &curlConn{body: "ok\nHTTPSTATUS:200"}
 	if _, err := modulePushover(context.Background(), conn, pushoverArgs()); err != nil {
 		t.Fatal(err)
 	}
-	for _, cmd := range conn.Commands {
-		for name, secret := range map[string]string{"app_token": poToken, "user_key": poUser} {
-			if strings.Contains(cmd, secret) {
-				t.Errorf("%s reached a command line: %q", name, cmd)
-			}
-		}
-	}
-	// The CONTROL: they must be somewhere, or this test passes on a
-	// module that simply never sent them.
+	assertSecretsOffArgv(t, conn, map[string]string{"app_token": poToken, "user_key": poUser})
 	joined := strings.Join(conn.Stdins, "\n")
-	for name, secret := range map[string]string{"app_token": poToken, "user_key": poUser} {
-		if !strings.Contains(joined, secret) {
-			t.Errorf("%s never reached stdin either; the request cannot have carried it", name)
-		}
-	}
 	// And the url is on stdin too, not argv: for a webhook service the
 	// URL itself is the credential, so the helper keeps it there for
 	// every caller.
@@ -108,7 +63,7 @@ func TestPushoverKeepsBothSecretsOffTheCommandLine(t *testing.T) {
 
 // Real's own option order, which decides the body it sends.
 func TestPushoverSendsRealsFieldNamesInOrder(t *testing.T) {
-	conn := &pushoverConn{body: "ok\nHTTPSTATUS:200"}
+	conn := &curlConn{body: "ok\nHTTPSTATUS:200"}
 	args := pushoverArgs()
 	args["pri"] = "1"
 	args["title"] = "Alert!"
@@ -128,7 +83,7 @@ func TestPushoverSendsRealsFieldNamesInOrder(t *testing.T) {
 // because a playbook may match on it; the cause is attached rather than
 // discarded.
 func TestPushoverNon200UsesRealsWordingAndKeepsTheCause(t *testing.T) {
-	conn := &pushoverConn{body: `{"errors":["application token is invalid"]}` + "\nHTTPSTATUS:400"}
+	conn := &curlConn{body: `{"errors":["application token is invalid"]}` + "\nHTTPSTATUS:400"}
 	res, err := modulePushover(context.Background(), conn, pushoverArgs())
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +103,7 @@ func TestPushoverNon200UsesRealsWordingAndKeepsTheCause(t *testing.T) {
 }
 
 func TestPushoverWithoutCurlSaysWhy(t *testing.T) {
-	conn := &pushoverConn{noCurl: true}
+	conn := &curlConn{noCurl: true}
 	res, err := modulePushover(context.Background(), conn, pushoverArgs())
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +114,7 @@ func TestPushoverWithoutCurlSaysWhy(t *testing.T) {
 }
 
 func TestPushoverRejectsAPriorityRealWouldReject(t *testing.T) {
-	conn := &pushoverConn{body: "ok\nHTTPSTATUS:200"}
+	conn := &curlConn{body: "ok\nHTTPSTATUS:200"}
 	args := pushoverArgs()
 	args["pri"] = "7"
 	res, err := modulePushover(context.Background(), conn, args)
