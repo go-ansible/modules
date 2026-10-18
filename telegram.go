@@ -32,23 +32,33 @@ import (
 // changed=TRUE on a successful send, unlike grove and pushover -- this
 // module is the one of the three that claims a change.
 //
-// # The token is in the URL path, and real leaks it
+// # The token is in the URL path, and this port has no scrubber
 //
 // token is no_log=True in real's argument_spec, and the URL is built as
 // .../bot<token>/<method>. curlDo sends the url on stdin through curl's
 // own -K - config, so it never reaches argv.
 //
-// ⛔ Real's own failure path does leak it. Its message is
+// Real's failure message embeds that url:
 //
 //	f"Failed to send message, return status = {info['status']}\n
 //	  url = {url}\napi_args = {api_args}"
 //
-// and that url contains the bot token, so a failed Telegram task prints
-// the credential into the playbook output, the log, and whatever
-// collects it. This port deliberately does NOT reproduce that: the
-// status and api_args are reported, the URL is not. Matching an upstream
-// behaviour is this project's rule, and a behaviour that writes a secret
-// to an output stream is where the rule stops.
+// which looks like a leak and is NOT one: AnsibleModule's
+// _return_formatted -- which exit_json and fail_json both run -- calls
+// remove_values(kwargs, self.no_log_values), and that does SUBSTRING
+// replacement, so the token inside the url comes out as "********"
+// before anything prints it.
+//
+// ⛔ This port has no such machinery. It honours task-level
+// `no_log: true`, which suppresses a whole result, but it has no
+// equivalent of remove_values: nothing scrubs the VALUE of a no_log
+// argument out of a message that happens to contain it. So the url is
+// omitted here, not because real is careless but because real can
+// afford a message this port cannot: reproducing that sentence would
+// emit the bot token verbatim.
+//
+// The status and api_args are reported, which is everything in real's
+// message that is not the credential.
 func moduleTelegram(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	token, err := requireString(args, "token")
 	if err != nil {

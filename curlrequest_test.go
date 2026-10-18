@@ -202,9 +202,13 @@ func TestTelegramCheckModeSendsNothing(t *testing.T) {
 	}
 }
 
-// Real's failure message embeds the URL, which carries the bot token.
-// This port reports the status and api_args without it.
-func TestTelegramFailureDoesNotLeakTheToken(t *testing.T) {
+// Real's failure message embeds the url, and real gets away with it:
+// remove_values scrubs the no_log token out of any result string before
+// it prints. This port has no remove_values -- only task-level no_log,
+// which suppresses a whole result -- so the same sentence here would
+// emit the token verbatim. Hence the url is omitted, and this holds
+// that line.
+func TestTelegramFailureKeepsTheTokenOutOfTheMessage(t *testing.T) {
 	const token = "BOTTOKEN-leakme:cccccccccccccccc"
 	conn := &curlConn{body: `{"description":"chat not found"}` + "\nHTTPSTATUS:400"}
 	res, err := moduleTelegram(context.Background(), conn, map[string]any{
@@ -217,7 +221,7 @@ func TestTelegramFailureDoesNotLeakTheToken(t *testing.T) {
 		t.Fatal("a 400 did not fail the task")
 	}
 	if strings.Contains(res.Msg, token) {
-		t.Errorf("the bot token is in the failure message, which real does and this port must not: %q", res.Msg)
+		t.Errorf("the bot token is in the failure message; this port has no remove_values to scrub it: %q", res.Msg)
 	}
 	for k, v := range res.Extra {
 		if s, ok := v.(string); ok && strings.Contains(s, token) {
