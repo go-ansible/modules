@@ -565,6 +565,7 @@ func registerBuiltins(r *Registry) {
 	r.Register("odbc", moduleOdbc)
 	r.Register("riak", moduleRiak)
 	r.Register("say", moduleSay)
+	r.Register("pushover", modulePushover)
 	r.Register("serverless", moduleServerless)
 	r.Register("vmadm", moduleVmadm)
 
