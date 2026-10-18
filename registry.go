@@ -132,6 +132,7 @@ func registerBuiltins(r *Registry) {
 	// Language/dev tooling.
 	r.Register("cpanm", moduleCpanm)
 	r.Register("cargo", moduleCargo)
+	r.Register("google_chat", moduleGoogleChat)
 	r.Register("golang_package", moduleGolangPackage)
 	r.Register("maven_artifact", moduleMavenArtifact)
 	r.Register("pear", modulePear)
@@ -330,6 +331,7 @@ func registerBuiltins(r *Registry) {
 	// More facts.
 	r.Register("facter_facts", moduleFacterFacts)
 	r.Register("ohai", moduleOhai)
+	r.Register("cisco_webex", moduleCiscoWebex)
 	r.Register("cloud_init_data_facts", moduleCloudInitDataFacts)
 	r.Register("sssd_info", moduleSssdInfo)
 	r.Register("nexmo", moduleNexmo)
@@ -476,6 +478,7 @@ func registerBuiltins(r *Registry) {
 	// Provisioning + Django extensions + IPMI.
 	r.Register("cobbler_sync", moduleCobblerSync)
 	r.Register("cobbler_system", moduleCobblerSystem)
+	r.Register("discord", moduleDiscord)
 	r.Register("django_check", moduleDjangoCheck)
 	r.Register("django_createcachetable", moduleDjangoCreateCacheTable)
 	r.Register("django_dumpdata", moduleDjangoDumpData)
