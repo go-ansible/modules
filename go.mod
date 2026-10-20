@@ -3,7 +3,7 @@ module github.com/go-ansible/modules
 go 1.27.1
 
 require (
-	github.com/go-ansible/facts v0.19.0
+	github.com/go-ansible/facts v0.19.1
 	github.com/go-ansible/template v0.33.2
 	github.com/go-regexp/engine v0.3.0
 	github.com/go-remoteexec/transport v0.8.0
