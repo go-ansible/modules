@@ -31,6 +31,31 @@ reaches the target only through the connection's `Exec`/`Put`/`Fetch`
 primitives — no Python, no script copied to the target. `reg.Names()` lists
 every registered module name; `reg.Register` adds or overrides one.
 
+## Which collection a module came from
+
+`Collection(name)` answers `"ansible.builtin"`, `"ansible.posix"` or
+`"community.general"`, and `FQCN(name)` builds the name real `ansible-doc`
+prints — `community.general.rocketchat`, `ansible.posix.synchronize`.
+
+It exists because a consumer printing a qualified name had no way to get it
+right, and the wrong name was worse than cosmetic: `NormalizeName` strips any
+known prefix, so `ansible.builtin.rocketchat` ran *here* and real Ansible
+rejects it. Our own `ansible-doc` was handing out a name that only works on us,
+and nothing local could tell you.
+
+The three lists were measured on 2026-10-18 by intersecting `Default().Names()`
+with `ansible-doc -l <collection> -t module` from real ansible-core 2.21.4 — 62,
+14 and 500 names, disjoint, their union exactly the registry. Both properties
+are asserted, so a module added without an entry fails the build rather than
+silently becoming `ansible.builtin`, which is how the old assumption survived
+514 modules.
+
+`ansible.builtin` has 71 modules; the nine missing here (`add_host`,
+`group_by`, `meta` and the `import_*`/`include_*` family) are playbook
+constructs rather than remote modules, and live in
+[`playbook`](https://github.com/go-ansible/playbook) — where real Ansible keeps
+them too.
+
 ## Security
 
 A module here composes a shell command, so a value that reaches a command
