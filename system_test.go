@@ -16,6 +16,7 @@ import (
 func TestModuleUserCreate(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"getent passwd bob": {RC: 2}, // not found
+		"getent group bob":  {RC: 2}, // no same-named group, so no -N
 	})
 	res, err := moduleUser(context.Background(), conn, map[string]any{"name": "bob"})
 	if err != nil {
@@ -24,7 +25,7 @@ func TestModuleUserCreate(t *testing.T) {
 	if !res.Changed {
 		t.Fatal("want changed")
 	}
-	if conn.Commands[1] != "useradd -m bob" {
+	if conn.Commands[2] != "useradd -m bob" {
 		t.Fatalf("commands = %v", conn.Commands)
 	}
 }
