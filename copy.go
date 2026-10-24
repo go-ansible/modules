@@ -14,10 +14,25 @@ import (
 // moduleCopy implements Ansible's `copy` module: writes literal content
 // or a local file to a path on the target, idempotently (skips the
 // transfer when the destination already holds the same bytes) and
-// optionally sets its mode.
+// optionally sets its owner, group and mode.
 //
 // Args: dest (string, required); content (string) or src (local file
-// path) — exactly one; mode (octal string).
+// path) — exactly one; mode (octal string); owner; group (each a name
+// or a numeric ID); force (bool, default true).
+//
+// owner and group are compared against the file's current ones and
+// chown runs only when one differs, so they count towards changed only
+// then -- real's set_fs_attributes_if_different. They are applied after
+// the content is written and before mode, in real's order, on a new
+// file and on an existing one alike. They used to be ignored entirely:
+// a root-run copy of an authorized_keys file with owner: ubuntu left it
+// root:root, which sshd refuses for that user.
+//
+// force: false with dest already present does nothing at all and
+// reports unchanged, with only dest and src in the result: real's copy
+// action returns before transferring anything and never calls the file
+// module, so owner, group and mode are NOT applied to the existing
+// file either.
 func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	dest, err := requireString(args, "dest")
 	if err != nil {
@@ -27,12 +42,24 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 	if err != nil {
 		return Result{}, err
 	}
+	owner := argString(args, "owner", "")
+	group := argString(args, "group", "")
 
 	wantBytes, cleanup, err := copySource(args)
 	if err != nil {
 		return Result{}, err
 	}
 	defer cleanup()
+
+	if !argBool(args, "force", true) {
+		src, hasSrc := args["src"]
+		if !hasSrc {
+			src = nil // real's task src, which is None for content:
+		}
+		if res, skipped, err := forceFalseSkip(ctx, conn, dest, src); err != nil || skipped {
+			return res, err
+		}
+	}
 
 	// Check mode reports what WOULD change without changing it. Every
 	// decision below is already made by comparing current state to
@@ -103,20 +130,15 @@ func moduleCopy(ctx context.Context, conn remoteexec.Connection, args map[string
 		changed = true
 	}
 
-	if mode != nil {
-		info, err := statPath(ctx, conn, dest)
-		if err != nil {
-			return Result{}, err
+	attrsChanged, err := applyFileAttrs(ctx, conn, dest, mode, owner, group, check)
+	if err != nil {
+		return Result{}, err
+	}
+	if attrsChanged {
+		if check {
+			return copyResult(dest, true).WithDiff(diff), nil
 		}
-		if info == nil || info.mode != *mode {
-			if check {
-				return copyResult(dest, true).WithDiff(diff), nil
-			}
-			if _, err := run(ctx, conn, fmt.Sprintf("chmod %04o %s", *mode, shellQuote(dest))); err != nil {
-				return Result{}, err
-			}
-			changed = true
-		}
+		changed = true
 	}
 
 	out := copyResult(dest, changed).WithDiff(diff)
@@ -146,6 +168,21 @@ func copyResult(dest string, changed bool) Result {
 	}
 	r.NoMsg = true
 	return r.WithExtra("dest", dest)
+}
+
+// forceFalseSkip is copy's (and so template's) force: false. When dest
+// already exists it returns the result real's copy action builds when
+// it skipped every file -- dest, src and changed=false, nothing else --
+// and skipped=true; otherwise skipped=false and the caller carries on.
+// Real reads `src` straight off the task, so it is the caller's src (or
+// nil for content:), not a staging path. Read from
+// lib/ansible/plugins/action/copy.py on stable-2.21, not measured.
+func forceFalseSkip(ctx context.Context, conn remoteexec.Connection, dest string, src any) (Result, bool, error) {
+	exists, err := pathExists(ctx, conn, dest)
+	if err != nil || !exists {
+		return Result{}, false, err
+	}
+	return copyResult(dest, false).WithExtra("src", src), true, nil
 }
 
 // withCopyFileKeys adds what real reports about the file that is now at
