@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.2
+          go-version: 1.27.3
       - run: go version
       # gofmt reports, it does not fail, so the check is the OUTPUT being
       # empty. A drifted file sat on main undetected until a local
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.2
+          go-version: 1.27.3
       - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
 
   # The modules that drive a real external binary, driven against the real
@@ -106,7 +106,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.2
+          go-version: 1.27.3
       - name: xorriso, which writes the image and reads it back
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso
       # terraform_wrapper: false — the wrapper is a shell script that shadows
@@ -134,7 +134,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.2
+          go-version: 1.27.3
       - run: go env GOARCH && CGO_ENABLED=0 go test ./...
 
   arch-qemu:
@@ -152,7 +152,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.2
+          go-version: 1.27.3
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-user-static
       - name: Test under qemu (${{ matrix.goarch }})
         run: CGO_ENABLED=0 GOARCH=${{ matrix.goarch }} go test -exec=${{ matrix.qemu }} ./...
