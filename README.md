@@ -62,12 +62,20 @@ A module here composes a shell command, so a value that reaches a command
 string reaches a shell. Three controls, all mechanical rather than careful:
 
 - **Quoting.** Every interpolated value goes through this package's
-  `shellQuote` — 1 718 call sites across 620 non-test files on
-  2026-10-18 (`grep -o 'shellQuote(' *.go | wc -l`). *Being careful* does
-  not scale to that, and a missed site is indistinguishable from a
-  deliberate one until somebody looks. The numbers are given with the
-  command that produced them because they drift with every batch; re-run
-  it rather than trusting the figure.
+  `shellQuote` — **1 415 call sites in 623 non-test files** on
+  2026-11-01, and 1 720 counting the tests. *Being careful* does not
+  scale to that, and a missed site is indistinguishable from a deliberate
+  one until somebody looks.
+
+  The figures used to be quoted as "1 718 call sites across 620 non-test
+  files", which paired the total *including tests* with the count of
+  files *excluding* them — two measures of different populations read as
+  one. They drift with every batch, so they are given with the thing
+  that produced them rather than as a number to trust:
+
+  ```sh
+  go run ./countsites -dir . -literal 'shellQuote('
+  ```
 - **Credentials in the environment**, via `transport`'s `ExecWithEnv`, which
   is what real Ansible does with `run_command`'s `environ_update`. Never a
   secret in `argv`, where `ps` shows it to every local user.
