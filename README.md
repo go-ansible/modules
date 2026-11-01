@@ -62,7 +62,7 @@ A module here composes a shell command, so a value that reaches a command
 string reaches a shell. Three controls, all mechanical rather than careful:
 
 - **Quoting.** Every interpolated value goes through this package's
-  `shellQuote` — **1 415 call sites in 623 non-test files** on
+  `shellQuote` — **1 415 call sites in 624 non-test files** on
   2026-11-01, and 1 720 counting the tests. *Being careful* does not
   scale to that, and a missed site is indistinguishable from a deliberate
   one until somebody looks.
