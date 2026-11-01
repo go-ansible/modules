@@ -37,7 +37,7 @@ import (
 // curlReq describes one request. Every field that could carry a
 // credential -- URL, Query, Form, JSON -- is sent on STDIN, never argv.
 type curlReq struct {
-	Method    string      // "GET" or "POST"
+	Method    string      // any verb curl's `request =` takes; GET, POST and DELETE are used here
 	URL       string      // for a webhook or path-token service this IS the credential
 	Query     [][2]string // appended as a query string; nexmo puts its api_secret here
 	Form      [][2]string // application/x-www-form-urlencoded body

@@ -2,69 +2,22 @@ package modules
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// TestEveryCheckModeImplementationIsRegistered is the invariant whose
-// absence let four modules implement a dry run that the engine never
-// reached. checkModeSupport is opt-in by design -- an unported module
-// must be SKIPPED rather than run for real -- but the cost of that
-// default is this: a module can grow a correct check-mode branch and
-// still be skipped, and nothing says so. Both halves are silent, which
-// is why this reads the package's own sources rather than trusting a
-// hand-kept list.
+// The invariant that used to live here -- every module branching on
+// check mode must be registered -- moved to
+// checkmode_registered_test.go, where it asks each registered module
+// about its own FUNCTION BODY instead of matching a file's basename
+// against a module name. pagerduty.go is why: it holds three modules,
+// only two of which branch, and the file-name version named the third.
 //
-// It can only flag what it can NAME: a module implemented in a file
-// called something else (shell, which lives in command.go) is invisible
-// to it. It would still have caught all four of the misses it was
-// written for -- cisco_webex, discord, google_chat and telegram -- and
-// an under-approximation that fires is worth more than a complete one
-// that cannot run.
-func TestEveryCheckModeImplementationIsRegistered(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	registered := make(map[string]bool)
-	for _, name := range Default().Names() {
-		registered[name] = true
-	}
-
-	var checked int
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") || f == "checkmode.go" {
-			continue
-		}
-		src, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(src), "InCheckMode(args)") {
-			continue
-		}
-		name := strings.TrimSuffix(filepath.Base(f), ".go")
-		if !registered[name] {
-			// A helper, or a module whose file is named differently;
-			// there is nothing to assert about a name that is not one.
-			continue
-		}
-		checked++
-		if !SupportsCheckMode(name) {
-			t.Errorf("%s branches on check mode in %s but is absent from checkModeSupport, "+
-				"so the engine skips it instead of running the branch", name, f)
-		}
-	}
-	// The positive control: a scan that cannot see is indistinguishable
-	// from a scan that found nothing. There are at least a dozen such
-	// modules, so a count in single digits means the glob or the marker
-	// stopped matching, not that the gap closed.
-	if checked < 10 {
-		t.Errorf("only %d module(s) examined; the source scan has stopped seeing check-mode branches", checked)
-	}
-}
+// The original wording, kept because it is still the reason the
+// invariant exists: checkModeSupport is opt-in by design -- an unported
+// module must be SKIPPED rather than run for real -- but the cost of
+// that default is this: a module can grow a correct check-mode branch
+// and still be skipped, and nothing says so. Both halves are silent.
 
 // Real cisco_webex does NOT skip in check mode: it swaps the POST for a
 // read-only GET of /people/me and reports whether the token

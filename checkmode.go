@@ -61,6 +61,23 @@ var checkModeSupport = map[string]bool{
 	"discord":     true,
 	"google_chat": true,
 	"telegram":    true,
+
+	// PagerDuty, two of the family's three modules: real declares
+	// supports_check_mode=True in pagerduty_change.py:124 and
+	// pagerduty_alert.py:330, and nothing at all in pagerduty.py, so the
+	// maintenance-window module is deliberately NOT here and stays
+	// skipped.
+	//
+	// They differ again. pagerduty_change POSTS an empty event and
+	// treats HTTP 400 as the pass -- real's own way of proving the
+	// endpoint answers without enqueueing anything. pagerduty_alert's v1
+	// branch runs its incident lookup and skips only the event POST, as
+	// real does; its v2 branch sends NOTHING here, which is a
+	// deliberate divergence written up in pagerduty.go, because real's
+	// check_mode guard covers only the v1 path and a dry run that pages
+	// an on-call engineer is not a dry run.
+	"pagerduty_alert":  true,
+	"pagerduty_change": true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,
