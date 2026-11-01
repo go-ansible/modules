@@ -16,6 +16,7 @@ import (
 type curlConn struct {
 	remoteexec.Connection
 	body     string // may carry the \nHTTPSTATUS: trailer
+	postBody string // answer for the SECOND request onward, when set
 	rc       int
 	noCurl   bool
 	hostname string // answer for a bare `hostname`, when a module asks
@@ -45,6 +46,12 @@ func (c *curlConn) Exec(ctx context.Context, cmd string, stdin io.Reader) (remot
 		return remoteexec.Result{RC: 0, Stdout: "/usr/bin/curl\n"}, nil
 	}
 	c.calls++
+	// A module that looks before it writes needs two different answers:
+	// the collection it searched, then the object the device echoed
+	// back. One scripted body cannot tell those apart.
+	if c.calls > 1 && c.postBody != "" {
+		return remoteexec.Result{RC: c.rc, Stdout: c.postBody}, nil
+	}
 	return remoteexec.Result{RC: c.rc, Stdout: c.body}, nil
 }
 

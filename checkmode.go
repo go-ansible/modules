@@ -78,6 +78,19 @@ var checkModeSupport = map[string]bool{
 	// an on-call engineer is not a dry run.
 	"pagerduty_alert":  true,
 	"pagerduty_change": true,
+
+	// Sophos UTM's five info modules. Each declares
+	// supports_check_mode=True in real and each only ever GETs its
+	// object, so they belong here for the same reason stat and find do:
+	// a read changes nothing either way, and real runs them in a check
+	// run rather than reporting them skipped. The three UTM WRITE
+	// modules are deliberately absent -- real declares no check-mode
+	// support for them, and neither do we.
+	"utm_aaa_group_info":                 true,
+	"utm_ca_host_key_cert_info":          true,
+	"utm_network_interface_address_info": true,
+	"utm_proxy_frontend_info":            true,
+	"utm_proxy_location_info":            true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,

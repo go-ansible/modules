@@ -968,4 +968,29 @@ func registerBuiltins(r *Registry) {
 	r.Register("pagerduty", modulePagerduty)
 	r.Register("pagerduty_alert", modulePagerdutyAlert)
 	r.Register("pagerduty_change", modulePagerdutyChange)
+
+	// community.general collection (batch 16, 8 more of 577 modules):
+	// eight of Sophos UTM's thirteen modules. The family is thirteen
+	// modules over ONE algorithm -- real implements it once in
+	// module_utils/_utm_utils.py -- so utm.go implements that algorithm
+	// and each module here is a spec naming its endpoint, its
+	// change-relevant keys and its argument defaults.
+	//
+	// The five NOT registered (utm_aaa_group and the four reverse_proxy
+	// write modules) declare fourteen to twenty-five fields each. The
+	// engine is already theirs; what is missing is a field-by-field
+	// transcription of their defaults, and a default transcribed wrong
+	// is a silently different request to a firewall.
+	// Each has its own function rather than a closure from the spec
+	// table, because ansible-doc prints the doc comment of the function
+	// the registry holds: a shared closure would give all eight the
+	// same page. TestDocsCoversEveryRegisteredModule caught that.
+	r.Register("utm_dns_host", moduleUtmDnsHost)
+	r.Register("utm_network_interface_address", moduleUtmNetworkInterfaceAddress)
+	r.Register("utm_ca_host_key_cert", moduleUtmCaHostKeyCert)
+	r.Register("utm_aaa_group_info", moduleUtmAaaGroupInfo)
+	r.Register("utm_ca_host_key_cert_info", moduleUtmCaHostKeyCertInfo)
+	r.Register("utm_network_interface_address_info", moduleUtmNetworkInterfaceAddressInfo)
+	r.Register("utm_proxy_frontend_info", moduleUtmProxyFrontendInfo)
+	r.Register("utm_proxy_location_info", moduleUtmProxyLocationInfo)
 }
