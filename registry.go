@@ -993,4 +993,18 @@ func registerBuiltins(r *Registry) {
 	r.Register("utm_network_interface_address_info", moduleUtmNetworkInterfaceAddressInfo)
 	r.Register("utm_proxy_frontend_info", moduleUtmProxyFrontendInfo)
 	r.Register("utm_proxy_location_info", moduleUtmProxyLocationInfo)
+
+	// community.general collection (batch 17, the last 5 of Sophos
+	// UTM's thirteen): utm_aaa_group and the four reverse_proxy write
+	// modules, which were deferred in batch 16 for one reason -- each
+	// declares fourteen to twenty-five fields whose defaults have to
+	// match real's exactly. Their specs were GENERATED from the real
+	// argument specs rather than transcribed, with a control that
+	// refuses to emit a module whose change-relevant keys are not all
+	// declared fields. The family is now 13 of 13.
+	r.Register("utm_aaa_group", moduleUtmAaaGroup)
+	r.Register("utm_proxy_exception", moduleUtmProxyException)
+	r.Register("utm_proxy_frontend", moduleUtmProxyFrontend)
+	r.Register("utm_proxy_location", moduleUtmProxyLocation)
+	r.Register("utm_proxy_auth_profile", moduleUtmProxyAuthProfile)
 }

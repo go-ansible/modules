@@ -277,6 +277,122 @@ func TestUTMAnErrorIsNotAnAbsence(t *testing.T) {
 	}
 }
 
+// The five bigger write modules were generated from real's argument
+// specs, and these are the two things that generation introduced.
+
+// Real's framework refuses a value outside a field's choices list
+// before the module body runs, so the task fails rather than the device
+// rejecting it. utm_proxy_frontend's type is the clearest case.
+func TestUTMRefusesAValueOutsideRealsChoices(t *testing.T) {
+	conn := &curlConn{body: "[]\nHTTPSTATUS:200"}
+	res, err := Default().Run(context.Background(), "utm_proxy_frontend", conn, utmArgs(map[string]any{
+		"type": "ftp",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatal("a type outside real's choices was accepted")
+	}
+	if !strings.Contains(res.Msg, "http, https") {
+		t.Errorf("msg = %q, want real's own choices listed", res.Msg)
+	}
+	if conn.calls != 0 {
+		t.Errorf("made %d request(s) before validating, want 0", conn.calls)
+	}
+
+	// And a value inside the list is accepted, so the check is not
+	// simply refusing everything.
+	ok := &curlConn{body: "[]\nHTTPSTATUS:200"}
+	res2, err := Default().Run(context.Background(), "utm_proxy_frontend", ok, utmArgs(map[string]any{
+		"type": "https",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Failed {
+		t.Fatalf("a valid choice was refused: %+v", res2)
+	}
+}
+
+// utm_proxy_auth_profile requires five arguments, and TWO OF THEM ARE
+// NOT STRINGS: aaa is a list and the two session timeouts are ints. A
+// required check written as "a non-empty string" would reject a correct
+// task, which is why the family's check tests for presence.
+func TestUTMRequiredFieldsAreNotAllStrings(t *testing.T) {
+	conn := &curlConn{body: "[]\nHTTPSTATUS:200"}
+	res, err := Default().Run(context.Background(), "utm_proxy_auth_profile", conn, utmArgs(map[string]any{
+		"aaa":                       []any{"REF_AAA"},
+		"basic_prompt":              "Please log in",
+		"frontend_session_lifetime": 8,
+		"frontend_session_timeout":  30,
+	}))
+	if err != nil {
+		t.Fatalf("a correct task was refused: %v", err)
+	}
+	if res.Failed {
+		t.Fatalf("res = %+v", res)
+	}
+	body := utmBodies(t, conn)[0]
+	if _, ok := body["aaa"].([]any); !ok {
+		t.Errorf("aaa reached the body as %T, want the list it was given", body["aaa"])
+	}
+	if body["frontend_session_lifetime"] != float64(8) {
+		t.Errorf("frontend_session_lifetime = %#v, want the number 8", body["frontend_session_lifetime"])
+	}
+	// Real's defaults for the fields the task did not set.
+	for k, want := range map[string]any{
+		"backend_mode":                    "None",
+		"frontend_mode":                   "Basic",
+		"frontend_session_lifetime_scope": "hours",
+		"frontend_session_timeout_scope":  "minutes",
+		"backend_strip_basic_auth":        true,
+		"redirect_to_requested_url":       false,
+	} {
+		if body[k] != want {
+			t.Errorf("body[%q] = %#v, want real's default %#v", k, body[k], want)
+		}
+	}
+
+	// And a missing required argument is still refused.
+	missing := &curlConn{body: "[]\nHTTPSTATUS:200"}
+	if _, err := Default().Run(context.Background(), "utm_proxy_auth_profile", missing, utmArgs(map[string]any{
+		"basic_prompt": "x", "frontend_session_lifetime": 8, "frontend_session_timeout": 30,
+	})); err == nil {
+		t.Error("a task with no aaa was accepted")
+	}
+}
+
+// utm_proxy_frontend's defaults are the device's own object references,
+// not placeholders, so they have to reach the body verbatim.
+func TestUTMSendsRealsRefDefaults(t *testing.T) {
+	conn := &curlConn{body: "[]\nHTTPSTATUS:200"}
+	if _, err := Default().Run(context.Background(), "utm_proxy_frontend", conn, utmArgs(nil)); err != nil {
+		t.Fatal(err)
+	}
+	body := utmBodies(t, conn)[0]
+	if body["address"] != "REF_DefaultInternalAddress" {
+		t.Errorf("address = %#v, want real's REF default", body["address"])
+	}
+	nets, _ := body["allowed_networks"].([]any)
+	if len(nets) != 1 || nets[0] != "REF_NetworkAny" {
+		t.Errorf("allowed_networks = %#v, want real's [REF_NetworkAny]", body["allowed_networks"])
+	}
+	if body["port"] != float64(80) {
+		t.Errorf("port = %#v, want real's 80", body["port"])
+	}
+	// A dict default must serialise as {} rather than null.
+	g := &curlConn{body: "[]\nHTTPSTATUS:200"}
+	if _, err := Default().Run(context.Background(), "utm_aaa_group", g, utmArgs(nil)); err != nil {
+		t.Fatal(err)
+	}
+	if sids, ok := utmBodies(t, g)[0]["adirectory_groups_sids"].(map[string]any); !ok {
+		t.Errorf("adirectory_groups_sids = %#v, want an empty object", utmBodies(t, g)[0]["adirectory_groups_sids"])
+	} else if len(sids) != 0 {
+		t.Errorf("adirectory_groups_sids = %#v, want it empty", sids)
+	}
+}
+
 // The case that makes the status check load-bearing rather than
 // decorative: a 403 whose body is a VALID EMPTY ARRAY. Parsing alone
 // cannot tell that from "no such object", so a module that looked only
