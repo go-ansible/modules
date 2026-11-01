@@ -950,4 +950,22 @@ func registerBuiltins(r *Registry) {
 	r.Register("campfire", moduleCampfire)
 	r.Register("bigpanda", moduleBigpanda)
 	r.Register("rocketchat", moduleRocketchat)
+
+	// community.general collection (batch 15, 3 more of 577 modules):
+	// three of PagerDuty's four modules. All three reach
+	// api.pagerduty.com or events.pagerduty.com through fetch_url in
+	// real, so they go through curl ON THE TARGET here.
+	//
+	// The fourth, pagerduty_user, is NOT registered, and the reason is
+	// its implementation rather than its API: it is built on the pdpyras
+	// SDK (APISession.iter_all to page the user list, APISession.persist
+	// to upsert by email), so a faithful port must reproduce that
+	// library's pagination and idempotency rule rather than one
+	// documented endpoint. Named in pagerduty.go rather than left
+	// quietly missing from this list.
+
+	// PagerDuty, via curl on the target.
+	r.Register("pagerduty", modulePagerduty)
+	r.Register("pagerduty_alert", modulePagerdutyAlert)
+	r.Register("pagerduty_change", modulePagerdutyChange)
 }
