@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -16,15 +17,19 @@ import (
 // a utmSpec naming its endpoint, the keys that decide whether an
 // existing object has changed, and its argument defaults.
 //
-// Eight of the thirteen are registered: all five info modules, and the
-// three write modules whose argument specs are small enough to have been
-// read in full and transcribed exactly (utm_dns_host,
-// utm_network_interface_address, utm_ca_host_key_cert). The other five --
-// utm_aaa_group and the four reverse_proxy write modules -- declare
-// between fourteen and twenty-five fields each, and a default
-// transcribed wrong is a silently different request to a firewall, so
-// they are left for their own change rather than guessed at here. The
-// engine below is already theirs; only the specs are missing.
+// All thirteen are registered. The three small write modules and the
+// five info modules were transcribed by hand from specs read in full;
+// the five bigger write modules -- utm_aaa_group and the four
+// reverse_proxy ones, fourteen to twenty-five fields each -- were
+// GENERATED from the real argument specs, because transcribing that
+// many defaults by eye is the failure mode and a default transcribed
+// wrong is a silently different request to a firewall.
+//
+// The generator (go-ansible-parity/utmgen) refuses to emit a module
+// whose change-relevant keys are not all declared fields. That control
+// is what caught it truncating utm_aaa_group at three fields of
+// fourteen while exiting 0 -- and it is also what surfaced a real
+// defect in utm_proxy_exception, noted on that spec below.
 //
 // Everything goes through curl ON THE TARGET, with the url, the headers
 // and the body on curl's stdin config.
@@ -59,6 +64,11 @@ type utmField struct {
 	name     string
 	required bool
 	def      any
+	// choices is real's own choices list for the field. Real's framework
+	// refuses a value outside it before the module body runs, so a task
+	// that sends one gets an argument error rather than a 4xx from the
+	// device.
+	choices []string
 }
 
 // utmConnectionFields are the arguments real's UTMModule adds to every
@@ -96,9 +106,20 @@ func runUTM(ctx context.Context, conn remoteexec.Connection, moduleName string, 
 		return Fail(moduleName + ": value of state must be one of: present, absent, got: " + state), nil
 	}
 	for _, f := range spec.fields {
+		// required=True in real means PRESENT, not "a non-empty string":
+		// utm_proxy_auth_profile requires aaa (a list) and two integer
+		// timeouts, which a string check would reject out of hand.
 		if f.required {
-			if _, err := requireString(args, f.name); err != nil {
-				return Result{}, err
+			if v, given := args[f.name]; !given || v == nil {
+				return Result{}, errArg("missing required argument: %s", f.name)
+			}
+		}
+		if len(f.choices) > 0 {
+			if v, given := args[f.name]; given {
+				if s := fmt.Sprint(v); s != "" && !slices.Contains(f.choices, s) {
+					return Fail(fmt.Sprintf("%s: value of %s must be one of: %s, got: %s",
+						moduleName, f.name, strings.Join(f.choices, ", "), s)), nil
+				}
 			}
 		}
 	}
@@ -366,8 +387,143 @@ var utmSpecs = map[string]utmSpec{
 		},
 	},
 
-	// Info modules: all four declare only name, all four support check
-	// mode, and all four only ever GET.
+	// The five bigger write modules. Their field lists were GENERATED
+	// from the real argument specs rather than transcribed, because
+	// that was the whole reason they were deferred: between fourteen
+	// and twenty-five fields each, and a default transcribed wrong is a
+	// silently different request to a firewall. The generator refuses
+	// to emit a module whose change-relevant keys are not all declared
+	// fields, which is how it caught itself truncating utm_aaa_group at
+	// three fields of fourteen.
+	"utm_aaa_group": {
+		endpoint:   "aaa/group",
+		changeKeys: []string{"comment", "adirectory_groups", "adirectory_groups_sids", "backend_match", "dynamic", "edirectory_groups", "ipsec_dn", "ldap_attribute", "ldap_attribute_value", "members", "network", "radius_groups", "tacacs_groups"},
+		fields: []utmField{
+			{name: "name", required: true},
+			{name: "adirectory_groups", def: []any{}},
+			{name: "adirectory_groups_sids", def: map[string]any{}},
+			{name: "backend_match", def: "none", choices: []string{"none", "adirectory", "edirectory", "radius", "tacacs", "ldap"}},
+			{name: "comment", def: ""},
+			{name: "dynamic", def: "none", choices: []string{"none", "ipsec_dn", "directory_groups"}},
+			{name: "edirectory_groups", def: []any{}},
+			{name: "ipsec_dn", def: ""},
+			{name: "ldap_attribute", def: ""},
+			{name: "ldap_attribute_value", def: ""},
+			{name: "members", def: []any{}},
+			{name: "network", def: ""},
+			{name: "radius_groups", def: []any{}},
+			{name: "tacacs_groups", def: []any{}},
+		},
+	},
+	// NOTE: real lists "comment" as change-relevant here and declares
+	// no comment field. That is real's own defect, not a transcription
+	// slip: _is_object_changed then compares params.get("comment") --
+	// always None -- against the device's value, so real PUTs on every
+	// run when the object has a comment and raises KeyError when it
+	// does not. Reproduced as-is; this port reports the missing field
+	// by name instead of a bare KeyError.
+	"utm_proxy_exception": {
+		endpoint:   "reverse_proxy/exception",
+		changeKeys: []string{"op", "path", "skip_custom_threats_filters", "skip_threats_filter_categories", "skipav", "comment", "skipbadclients", "skipcookie", "skipform", "status", "skipform_missingtoken", "skiphtmlrewrite", "skiptft", "skipurl", "source"},
+		fields: []utmField{
+			{name: "name", required: true},
+			{name: "op", def: "AND", choices: []string{"AND", "OR"}},
+			{name: "path", def: []any{}},
+			{name: "skip_custom_threats_filters", def: []any{}},
+			{name: "skip_threats_filter_categories", def: []any{}},
+			{name: "skipav", def: false},
+			{name: "skipbadclients", def: false},
+			{name: "skipcookie", def: false},
+			{name: "skipform", def: false},
+			{name: "skipform_missingtoken", def: false},
+			{name: "skiphtmlrewrite", def: false},
+			{name: "skiptft", def: false},
+			{name: "skipurl", def: false},
+			{name: "source", def: []any{}},
+			{name: "status", def: true},
+		},
+	},
+	"utm_proxy_frontend": {
+		endpoint:   "reverse_proxy/frontend",
+		changeKeys: []string{"add_content_type_header", "address", "allowed_networks", "certificate", "comment", "disable_compression", "domain", "exceptions", "htmlrewrite", "htmlrewrite_cookies", "implicitredirect", "lbmethod", "locations", "port", "preservehost", "profile", "status", "type", "xheaders"},
+		fields: []utmField{
+			{name: "name", required: true},
+			{name: "add_content_type_header", def: false},
+			{name: "address", def: "REF_DefaultInternalAddress"},
+			{name: "allowed_networks", def: []any{"REF_NetworkAny"}},
+			{name: "certificate", def: ""},
+			{name: "comment", def: ""},
+			{name: "disable_compression", def: false},
+			{name: "domain"},
+			{name: "exceptions", def: []any{}},
+			{name: "htmlrewrite", def: false},
+			{name: "htmlrewrite_cookies", def: false},
+			{name: "implicitredirect", def: false},
+			{name: "lbmethod", def: "bybusyness", choices: []string{"bybusyness", "bytraffic", "byrequests"}},
+			{name: "locations", def: []any{}},
+			{name: "port", def: 80},
+			{name: "preservehost", def: false},
+			{name: "profile", def: ""},
+			{name: "status", def: true},
+			{name: "type", def: "http", choices: []string{"http", "https"}},
+			{name: "xheaders", def: false},
+		},
+	},
+	"utm_proxy_location": {
+		endpoint:   "reverse_proxy/location",
+		changeKeys: []string{"access_control", "allowed_networks", "auth_profile", "backend", "be_path", "comment", "denied_networks", "hot_standby", "path", "status", "stickysession_id", "stickysession_status", "websocket_passthrough"},
+		fields: []utmField{
+			{name: "name", required: true},
+			{name: "access_control", def: "0", choices: []string{"0", "1"}},
+			{name: "allowed_networks", def: []any{"REF_NetworkAny"}},
+			{name: "auth_profile", def: ""},
+			{name: "backend", def: []any{}},
+			{name: "be_path", def: ""},
+			{name: "comment", def: ""},
+			{name: "denied_networks", def: []any{}},
+			{name: "hot_standby", def: false},
+			{name: "path", def: "/"},
+			{name: "status", def: true},
+			{name: "stickysession_id", def: "ROUTEID"},
+			{name: "stickysession_status", def: false},
+			{name: "websocket_passthrough", def: false},
+		},
+	},
+	"utm_proxy_auth_profile": {
+		endpoint:   "reverse_proxy/auth_profile",
+		changeKeys: []string{"aaa", "basic_prompt", "backend_mode", "backend_strip_basic_auth", "backend_user_prefix", "backend_user_suffix", "comment", "frontend_cookie", "frontend_cookie_secret", "frontend_form", "frontend_form_template", "frontend_login", "frontend_logout", "frontend_mode", "frontend_realm", "frontend_session_allow_persistency", "frontend_session_lifetime", "frontend_session_lifetime_limited", "frontend_session_lifetime_scope", "frontend_session_timeout", "frontend_session_timeout_enabled", "frontend_session_timeout_scope", "logout_delegation_urls", "logout_mode", "redirect_to_requested_url"},
+		fields: []utmField{
+			{name: "name", required: true},
+			{name: "aaa", required: true},
+			{name: "basic_prompt", required: true},
+			{name: "backend_mode", def: "None", choices: []string{"Basic", "None"}},
+			{name: "backend_strip_basic_auth", def: true},
+			{name: "backend_user_prefix", def: ""},
+			{name: "backend_user_suffix", def: ""},
+			{name: "comment", def: ""},
+			{name: "frontend_cookie"},
+			{name: "frontend_cookie_secret"},
+			{name: "frontend_form"},
+			{name: "frontend_form_template", def: ""},
+			{name: "frontend_login"},
+			{name: "frontend_logout"},
+			{name: "frontend_mode", def: "Basic", choices: []string{"Basic", "Form"}},
+			{name: "frontend_realm"},
+			{name: "frontend_session_allow_persistency", def: false},
+			{name: "frontend_session_lifetime", required: true},
+			{name: "frontend_session_lifetime_limited", def: true},
+			{name: "frontend_session_lifetime_scope", def: "hours", choices: []string{"days", "hours", "minutes"}},
+			{name: "frontend_session_timeout", required: true},
+			{name: "frontend_session_timeout_enabled", def: true},
+			{name: "frontend_session_timeout_scope", def: "minutes", choices: []string{"days", "hours", "minutes"}},
+			{name: "logout_delegation_urls", def: []any{}},
+			{name: "logout_mode", def: "None", choices: []string{"None", "Delegation"}},
+			{name: "redirect_to_requested_url", def: false},
+		},
+	},
+
+	// Info modules: all five declare only name, all five support check
+	// mode, and all five only ever GET.
 	"utm_aaa_group_info": {
 		endpoint: "aaa/group", infoOnly: true,
 		fields: []utmField{{name: "name", required: true}},
@@ -469,10 +625,6 @@ func moduleUtmNetworkInterfaceAddressInfo(ctx context.Context, conn remoteexec.C
 // moduleUtmProxyFrontendInfo implements Ansible's
 // `utm_proxy_frontend_info` (community.general) module: reads one
 // reverse-proxy frontend object. Read-only; see moduleUtmAaaGroupInfo.
-//
-// The matching WRITE module, utm_proxy_frontend, is not ported: it
-// declares nineteen fields whose defaults have to be transcribed exactly
-// to avoid sending a firewall a quietly different request.
 func moduleUtmProxyFrontendInfo(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	return runUTM(ctx, conn, "utm_proxy_frontend_info", utmSpecs["utm_proxy_frontend_info"], args)
 }
@@ -480,9 +632,109 @@ func moduleUtmProxyFrontendInfo(ctx context.Context, conn remoteexec.Connection,
 // moduleUtmProxyLocationInfo implements Ansible's
 // `utm_proxy_location_info` (community.general) module: reads one
 // reverse-proxy location object. Read-only; see moduleUtmAaaGroupInfo.
-//
-// The matching WRITE module, utm_proxy_location, is not ported, for the
-// same reason as utm_proxy_frontend.
 func moduleUtmProxyLocationInfo(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
 	return runUTM(ctx, conn, "utm_proxy_location_info", utmSpecs["utm_proxy_location_info"], args)
+}
+
+// moduleUtmAaaGroup implements Ansible's `utm_aaa_group`
+// (community.general) module: an authentication group object.
+//
+// Args: name (required); backend_match (none|adirectory|edirectory|
+// radius|tacacs|ldap, default none); dynamic (none|ipsec_dn|
+// directory_groups, default none); adirectory_groups,
+// edirectory_groups, members, radius_groups, tacacs_groups (lists);
+// adirectory_groups_sids (dict); comment, ipsec_dn, ldap_attribute,
+// ldap_attribute_value, network (strings); plus the family's connection
+// arguments.
+//
+// Every one of those thirteen is change-relevant, so this module
+// updates whenever any of them differs from the device's object.
+func moduleUtmAaaGroup(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
+	return runUTM(ctx, conn, "utm_aaa_group", utmSpecs["utm_aaa_group"], args)
+}
+
+// moduleUtmProxyException implements Ansible's `utm_proxy_exception`
+// (community.general) module: a reverse-proxy exception, which is how
+// one path is let past selected web-protection checks.
+//
+// Args: name (required); op (AND|OR, default AND); path,
+// skip_custom_threats_filters, skip_threats_filter_categories, source
+// (lists); skipav, skipbadclients, skipcookie, skipform,
+// skipform_missingtoken, skiphtmlrewrite, skiptft, skipurl (bools,
+// default false); status (bool, default true); plus the family's
+// connection arguments.
+//
+// ⛔ Real lists "comment" among this module's change-relevant keys and
+// declares no comment argument. That is real's own defect: its
+// comparison then reads params.get("comment") -- always None -- against
+// the device's value, so real PUTs on every run when the object has a
+// comment, and raises a bare KeyError when it does not. This port
+// reproduces the comparison and names the missing field instead of
+// raising, which is the same outcome with the useful half kept.
+func moduleUtmProxyException(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
+	return runUTM(ctx, conn, "utm_proxy_exception", utmSpecs["utm_proxy_exception"], args)
+}
+
+// moduleUtmProxyFrontend implements Ansible's `utm_proxy_frontend`
+// (community.general) module: a reverse-proxy frontend -- the listener
+// a request arrives on.
+//
+// Args: name (required); address (default
+// "REF_DefaultInternalAddress"); allowed_networks (default
+// ["REF_NetworkAny"]); port (default 80); type (http|https, default
+// http); lbmethod (bybusyness|bytraffic|byrequests, default
+// bybusyness); certificate, comment, profile, domain, exceptions,
+// locations; and the booleans add_content_type_header,
+// disable_compression, htmlrewrite, htmlrewrite_cookies,
+// implicitredirect, preservehost, xheaders (default false) and status
+// (default true); plus the family's connection arguments.
+//
+// Those REF_ defaults are the device's own object references, not
+// placeholders: a frontend created with no address really does get
+// REF_DefaultInternalAddress.
+func moduleUtmProxyFrontend(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
+	return runUTM(ctx, conn, "utm_proxy_frontend", utmSpecs["utm_proxy_frontend"], args)
+}
+
+// moduleUtmProxyLocation implements Ansible's `utm_proxy_location`
+// (community.general) module: a reverse-proxy location -- the path
+// within a frontend and the backend it reaches.
+//
+// Args: name (required); path (default "/"); access_control (0|1,
+// default "0" -- a STRING in real, not a bool); allowed_networks
+// (default ["REF_NetworkAny"]); backend, denied_networks (lists);
+// auth_profile, be_path, comment; stickysession_id (default
+// "ROUTEID"); hot_standby, stickysession_status,
+// websocket_passthrough (bools, default false); status (default true);
+// plus the family's connection arguments.
+func moduleUtmProxyLocation(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
+	return runUTM(ctx, conn, "utm_proxy_location", utmSpecs["utm_proxy_location"], args)
+}
+
+// moduleUtmProxyAuthProfile implements Ansible's
+// `utm_proxy_auth_profile` (community.general) module: a reverse-proxy
+// authentication profile.
+//
+// Args: name, aaa (a list), basic_prompt, frontend_session_lifetime and
+// frontend_session_timeout are all REQUIRED -- and two of those five are
+// not strings, which is why the family's required check tests for
+// presence rather than for a non-empty string.
+//
+// Then: backend_mode (Basic|None, default None); frontend_mode
+// (Basic|Form, default Basic); logout_mode (None|Delegation, default
+// None); frontend_session_lifetime_scope and
+// frontend_session_timeout_scope (days|hours|minutes, defaulting to
+// hours and minutes respectively); backend_strip_basic_auth,
+// frontend_session_lifetime_limited and frontend_session_timeout_enabled
+// (default true); frontend_session_allow_persistency and
+// redirect_to_requested_url (default false); and the optional
+// frontend_cookie, frontend_cookie_secret, frontend_form,
+// frontend_form_template, frontend_login, frontend_logout,
+// frontend_realm, backend_user_prefix, backend_user_suffix, comment and
+// logout_delegation_urls.
+//
+// frontend_cookie_secret is a credential and travels in the request body
+// like every other field -- on curl's stdin, never in argv.
+func moduleUtmProxyAuthProfile(ctx context.Context, conn remoteexec.Connection, args map[string]any) (Result, error) {
+	return runUTM(ctx, conn, "utm_proxy_auth_profile", utmSpecs["utm_proxy_auth_profile"], args)
 }
