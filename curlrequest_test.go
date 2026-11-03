@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -20,6 +21,25 @@ type curlConn struct {
 	rc       int
 	noCurl   bool
 	hostname string // answer for a bare `hostname`, when a module asks
+
+	// bodies is a QUEUE of scripted answers, consumed one per curl
+	// invocation. body/postBody answer a module that makes one request
+	// then writes; a family whose run is token-exchange, then a paged
+	// lookup, then a write needs each step answered differently, and a
+	// queue is the only way to say "this one 200s, the next 404s".
+	// Empty means the body/postBody behaviour is unchanged.
+	bodies []string
+
+	// env answers `printenv NAME`. A name absent here is UNSET (exit 1),
+	// which is what printenv does and what a module must read as "no
+	// value", not as a failure.
+	env map[string]string
+
+	// keyscan answers `ssh-keyscan`, for the one module that needs a
+	// host's SSH key. Empty means the command fails, which is how a
+	// module learns it cannot reach the host.
+	keyscan string
+
 	Commands []string
 	Stdins   []string
 	calls    int
@@ -39,6 +59,25 @@ func (c *curlConn) Exec(ctx context.Context, cmd string, stdin io.Reader) (remot
 		}
 		return remoteexec.Result{RC: 0, Stdout: c.hostname + "\n"}, nil
 	}
+	if name, ok := strings.CutPrefix(cmd, "printenv "); ok {
+		v, set := c.env[name]
+		if !set {
+			return remoteexec.Result{RC: 1}, nil
+		}
+		return remoteexec.Result{RC: 0, Stdout: v + "\n"}, nil
+	}
+	if strings.Contains(cmd, "command -v ssh-keyscan") {
+		if c.keyscan == "" {
+			return remoteexec.Result{RC: 1}, nil
+		}
+		return remoteexec.Result{RC: 0, Stdout: "/usr/bin/ssh-keyscan\n"}, nil
+	}
+	if strings.HasPrefix(cmd, "ssh-keyscan ") {
+		if c.keyscan == "" {
+			return remoteexec.Result{RC: 1, Stderr: "no keyscan scripted on this fake"}, nil
+		}
+		return remoteexec.Result{RC: 0, Stdout: c.keyscan}, nil
+	}
 	if strings.Contains(cmd, "command -v curl") {
 		if c.noCurl {
 			return remoteexec.Result{RC: 1}, nil
@@ -46,6 +85,16 @@ func (c *curlConn) Exec(ctx context.Context, cmd string, stdin io.Reader) (remot
 		return remoteexec.Result{RC: 0, Stdout: "/usr/bin/curl\n"}, nil
 	}
 	c.calls++
+	if len(c.bodies) > 0 {
+		// Running past the end is a scripting mistake, and an empty
+		// answer would look like a module that stopped early rather than
+		// one that asked more than was scripted. Say which.
+		if c.calls > len(c.bodies) {
+			return remoteexec.Result{RC: 1, Stderr: fmt.Sprintf(
+				"curlConn: request %d but only %d scripted", c.calls, len(c.bodies))}, nil
+		}
+		return remoteexec.Result{RC: c.rc, Stdout: c.bodies[c.calls-1]}, nil
+	}
 	// A module that looks before it writes needs two different answers:
 	// the collection it searched, then the object the device echoed
 	// back. One scripted body cannot tell those apart.

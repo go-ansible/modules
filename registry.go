@@ -1007,4 +1007,23 @@ func registerBuiltins(r *Registry) {
 	r.Register("utm_proxy_frontend", moduleUtmProxyFrontend)
 	r.Register("utm_proxy_location", moduleUtmProxyLocation)
 	r.Register("utm_proxy_auth_profile", moduleUtmProxyAuthProfile)
+
+	// community.general collection (batch 18, 4 more of 577 modules):
+	// Bitbucket's four, all of them. They sit on one helper upstream --
+	// module_utils/_bitbucket.py's BitbucketHelper -- and differ only in
+	// the endpoint they drive and how they decide a change is needed, so
+	// they sit on one client here.
+	//
+	// Two things in the family are worth knowing before reading them.
+	// They do NOT paginate the same way: deploy keys and known hosts
+	// follow the server's `next` link, pipeline variables count `?page=N`
+	// until a page reports pagelen 0. And bitbucket_pipeline_known_host
+	// is the only module in this package that needs a host's SSH key: it
+	// runs ssh-keyscan on the target where real asks paramiko, a
+	// divergence written up in bitbucket.go rather than left to be
+	// discovered.
+	r.Register("bitbucket_access_key", moduleBitbucketAccessKey)
+	r.Register("bitbucket_pipeline_key_pair", moduleBitbucketPipelineKeyPair)
+	r.Register("bitbucket_pipeline_known_host", moduleBitbucketPipelineKnownHost)
+	r.Register("bitbucket_pipeline_variable", moduleBitbucketPipelineVariable)
 }

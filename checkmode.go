@@ -91,6 +91,20 @@ var checkModeSupport = map[string]bool{
 	"utm_network_interface_address_info": true,
 	"utm_proxy_frontend_info":            true,
 	"utm_proxy_location_info":            true,
+
+	// Bitbucket, all four: real declares supports_check_mode=True on
+	// every one of them, and every one guards only its WRITES with
+	// `if not module.check_mode`. The lookup still runs — a dry run
+	// authenticates, pages the collection and reports whether the change
+	// would happen, which is the useful half and changes nothing.
+	//
+	// bitbucket_pipeline_known_host has one extra reason to be exact
+	// here: its ssh-keyscan of the target is inside the write branch, so
+	// a dry run does not reach for a remote host's key either.
+	"bitbucket_access_key":          true,
+	"bitbucket_pipeline_key_pair":   true,
+	"bitbucket_pipeline_known_host": true,
+	"bitbucket_pipeline_variable":   true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,
