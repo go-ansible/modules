@@ -68,6 +68,7 @@ func TestRegistryDefault(t *testing.T) {
 		"ipa_hostgroup", "ipa_otpconfig", "ipa_otptoken", "ipa_pwpolicy",
 		"ipa_role", "ipa_service", "ipa_subca", "ipa_sudocmd",
 		"ipa_sudocmdgroup", "ipa_sudorule", "ipa_user", "ipa_vault",
+		"ipbase_info", "ipify_facts",
 		"ipinfoio_facts", "ipmi_boot", "ipmi_power", "iptables",
 		"iptables_state", "ipwcli_dns", "iso_create", "iso_customize",
 		"iso_extract", "java_cert", "java_keystore", "jboss", "jenkins_build",
