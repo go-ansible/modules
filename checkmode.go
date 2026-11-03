@@ -112,6 +112,14 @@ var checkModeSupport = map[string]bool{
 	// information comes back and nothing on the account moves.
 	"online_server_info": true,
 	"online_user_info":   true,
+
+	// Both declare supports_check_mode=True in real and both are a
+	// single GET. ipify_facts is a FACTS module, and a dry run that
+	// skipped it would leave `ipify_public_ip` undefined for every task
+	// after it -- a check run that fails on an undefined variable where
+	// a real run succeeds is worse than useless.
+	"ipbase_info": true,
+	"ipify_facts": true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,

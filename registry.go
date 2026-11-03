@@ -1040,4 +1040,21 @@ func registerBuiltins(r *Registry) {
 	// nothing said.
 	r.Register("online_server_info", moduleOnlineServerInfo)
 	r.Register("online_user_info", moduleOnlineUserInfo)
+
+	// community.general collection (batch 20, 2 more of 577 modules):
+	// two single-GET IP lookups, unrelated to each other beyond the
+	// shape. ipbase_info returns the API's own object as the result's
+	// top-level keys, the way real's `exit_json(**info())` does;
+	// ipify_facts sets one FACT, `ipify_public_ip`, and is the only
+	// module in this pair whose answer a later task reads by name.
+	//
+	// Both reproduce something upstream rather than repairing it:
+	// ipify_facts concatenates `?format=json` onto an api_url that may
+	// already carry a query, and its "timeout" message is unreachable
+	// for an HTTP error status. ipbase_info diverges in one place on
+	// purpose -- its parse-failure message redacts the apikey, because
+	// real is saved there by AnsibleModule's no_log scrubbing and this
+	// package has none.
+	r.Register("ipbase_info", moduleIpbaseInfo)
+	r.Register("ipify_facts", moduleIpifyFacts)
 }
