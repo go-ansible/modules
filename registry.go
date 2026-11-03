@@ -1026,4 +1026,18 @@ func registerBuiltins(r *Registry) {
 	r.Register("bitbucket_pipeline_key_pair", moduleBitbucketPipelineKeyPair)
 	r.Register("bitbucket_pipeline_known_host", moduleBitbucketPipelineKnownHost)
 	r.Register("bitbucket_pipeline_variable", moduleBitbucketPipelineVariable)
+
+	// community.general collection (batch 19, 2 more of 577 modules):
+	// Online.net's two info modules, which share module_utils/_online.py
+	// the way Bitbucket's four share _bitbucket.py.
+	//
+	// They look like the same module twice and are not.
+	// online_user_info returns the body of one GET. online_server_info
+	// gets back a list of PATHS and fetches each one, and that second
+	// loop carries two upstream behaviours online.go pins with tests
+	// rather than corrects: a failed detail fetch lands in the result as
+	// the API's own error object, and an unparseable one is dropped with
+	// nothing said.
+	r.Register("online_server_info", moduleOnlineServerInfo)
+	r.Register("online_user_info", moduleOnlineUserInfo)
 }

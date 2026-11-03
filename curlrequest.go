@@ -45,6 +45,13 @@ type curlReq struct {
 	Headers   [][2]string // extra request headers
 	BasicAuth string      // "user:password"; campfire sends its token this way
 	Timeout   int         // seconds; 30 when zero
+	// Insecure turns off certificate verification, for the modules whose
+	// real counterpart takes a `validate_certs` argument. It is a
+	// separate field rather than a header because it is not one: curl's
+	// own `insecure` directive is what fetch_url's validate_certs=False
+	// amounts to. Nothing sets it by default -- real's own default is
+	// true for every module in this package that has the argument.
+	Insecure bool
 }
 
 // curlDo runs one request through curl ON THE TARGET and returns the
@@ -112,6 +119,12 @@ func curlDo(ctx context.Context, conn remoteexec.Connection, req curlReq) (body 
 	var cfg strings.Builder
 	cfg.WriteString("url = \"" + curlConfigEscape(endpoint) + "\"\n")
 	cfg.WriteString("request = \"" + curlConfigEscape(req.Method) + "\"\n")
+	if req.Insecure {
+		// curl's own name for what validate_certs=False asks for. It
+		// goes in the config rather than as -k so that reading the
+		// command line cannot suggest the request was verified.
+		cfg.WriteString("insecure\n")
+	}
 	for _, h := range req.Headers {
 		if h[1] == "" {
 			// "Name:" with nothing after the colon is curl's own way of

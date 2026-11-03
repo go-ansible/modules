@@ -151,6 +151,7 @@ var communityGeneralModules = []string{
 	"nomad_job_info", "nomad_token", "nosh", "npm", "nsupdate", "odbc",
 	"ohai", "omapi_host", "one_host", "one_image", "one_image_info",
 	"one_service", "one_template", "one_vm", "one_vnet", "onepassword_info",
+	"online_server_info", "online_user_info",
 	"open_iscsi", "openbsd_pkg", "opendj_backendprop", "openwrt_init", "opkg",
 	"osx_defaults", "ovh_ip_failover", "ovh_ip_loadbalancing_backend",
 	"ovh_monthly_billing", "pacemaker_cluster", "pacemaker_info",

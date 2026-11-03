@@ -105,6 +105,13 @@ var checkModeSupport = map[string]bool{
 	"bitbucket_pipeline_key_pair":   true,
 	"bitbucket_pipeline_known_host": true,
 	"bitbucket_pipeline_variable":   true,
+
+	// Online.net's two info modules. Both declare
+	// supports_check_mode=True in real and both only ever GET, so there
+	// is no write to guard and a dry run is the same run: the
+	// information comes back and nothing on the account moves.
+	"online_server_info": true,
+	"online_user_info":   true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,
