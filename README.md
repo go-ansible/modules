@@ -89,6 +89,20 @@ string reaches a shell. Three controls, all mechanical rather than careful:
   appear on stdin, so it cannot pass on a module that simply never sent
   one.
 
+Stdin keeps a credential out of `argv`; it does not make the value safe by
+itself, and v0.95.1 fixed the half that was missing. curl reads **one option
+per physical line**, and the function quoting values into that config escaped
+only backslash and double quote — its own comment said "no embedded newlines",
+which was true of the one caller it was written for and of none of the callers
+added since. A value carrying a newline therefore ended its directive and
+opened another: measured on curl 8.7.1, a url of
+`file:///etc/hosts\nurl = file:///etc/passwd\n#` makes curl perform **two**
+transfers, the second of a file the caller never named. The escape now covers
+all five sequences curl accepts inside quotes, a control character in a url,
+header, query parameter or basic-auth pair is refused before anything runs,
+and `TestRealCurlDoesNotActOnAnInjectedDirective` holds it against the real
+binary with its own neuter — it fails if the old escape stops leaking.
+
 An audit of this library found one breach of each of the first two, both
 fixed in v0.80.0 and v0.80.1: `async_status`'s `jid` was interpolated **unquoted** into an
 `rm -rf`, and `keyring` built its passwords into a *two-statement* command,
