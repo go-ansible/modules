@@ -61,6 +61,35 @@ func curlDo(ctx context.Context, conn remoteexec.Connection, req curlReq) (body 
 		req.Method = "GET"
 	}
 
+	// A control character in the URL or in a header cannot be
+	// legitimate, and before curlConfigEscape learned to escape newlines
+	// one of them ended the directive and opened another -- see that
+	// function's own account of what was measured. The escape is the
+	// fix; this is the second lock, and it names the field so a caller
+	// finds its own bug rather than a curl error about a URL it never
+	// wrote. The request BODY is deliberately not checked: a newline or
+	// a tab in one is data, and the escape carries it through.
+	if !curlConfigSafe(req.URL) {
+		return "", 0, fmt.Errorf("curl: the request URL carries a control character: %q", req.URL)
+	}
+	for _, h := range req.Headers {
+		if !curlConfigSafe(h[0]) || !curlConfigSafe(h[1]) {
+			return "", 0, fmt.Errorf("curl: header %q carries a control character in its name or value", h[0])
+		}
+	}
+	for _, q := range req.Query {
+		// Percent-encoding below would defuse one of these before it
+		// reached the config, but it is still not something a caller
+		// meant to send.
+		if !curlConfigSafe(q[0]) || !curlConfigSafe(q[1]) {
+			return "", 0, fmt.Errorf("curl: query parameter %q carries a control character in its name or value", q[0])
+		}
+	}
+	if !curlConfigSafe(req.BasicAuth) {
+		// Named without its value: it is a credential.
+		return "", 0, fmt.Errorf("curl: the basic-auth credential carries a control character")
+	}
+
 	endpoint := req.URL
 	if len(req.Query) > 0 {
 		parts := make([]string, 0, len(req.Query))

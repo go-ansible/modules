@@ -286,13 +286,79 @@ func infinityCurl(ctx context.Context, conn remoteexec.Connection, args map[stri
 }
 
 // curlConfigEscape escapes a value for embedding inside a double-quoted
-// curl `-K`/`--config` directive line (curl's own config-file quoting:
-// backslash and double-quote are the only characters that need
-// escaping for a plain credential string with no embedded newlines).
+// curl `-K`/`--config` directive line.
+//
+// # A newline here used to be a directive, not a character
+//
+// curl's config parser takes ONE option per PHYSICAL line (curl.se's own
+// manpage, `-K, --config`: "Options and their parameters must be
+// specified on the same line in the file"), and inside double quotes it
+// understands exactly five escapes: `\\`, `\"`, `\t`, `\n`, `\r` and
+// `\v`. This function escaped the first two only, and its own comment
+// said so -- "for a plain credential string with no embedded newlines".
+// Every caller since has passed it values that are not that: curlDo
+// writes the URL, every header, the request body and the basic-auth pair
+// through it, and those are built from playbook data and, for the Online
+// modules, from a remote API's own response.
+//
+// A value carrying a newline therefore ENDED the directive and opened
+// another one. Measured on curl 8.7.1 with this two-line config, which
+// is what the old escape produced for a URL of
+// "file:///etc/hosts\nurl = file:///etc/passwd":
+//
+//	url = "file:///etc/hosts
+//	url = file:///etc/passwd"
+//
+//	curl: (3) URL rejected: Malformed input to a URL function
+//	curl: (37) Couldn't open file /etc/passwd"
+//
+// Two errors, from two transfers: curl read the second line as its own
+// `url` option. Anything else would have worked the same way --
+// `output = <path>` to write a file on the target, `upload-file` to send
+// one away, `proxy` to redirect the request -- so a value that reached
+// this function was, in effect, an arbitrary curl command line.
+//
+// Escaping the newline rather than rejecting it is what keeps the
+// callers working: a JSON body is legitimately full of newlines when it
+// was pretty-printed, and `\n` inside the quotes puts a real newline in
+// the VALUE, which is what the body wanted all along. Control characters
+// curl has no escape for are a different matter and are refused at the
+// door -- see curlConfigSafe, which curlDo applies to the fields where
+// one cannot be legitimate.
 func curlConfigEscape(s string) string {
+	// Backslash first: the replacements below introduce backslashes of
+	// their own, and doubling those would corrupt the value.
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	s = strings.ReplaceAll(s, "\t", `\t`)
+	s = strings.ReplaceAll(s, "\v", `\v`)
 	return s
+}
+
+// curlConfigSafe reports whether s is free of control characters.
+//
+// Escaping alone is enough to keep curl's parser honest, and that is why
+// a request BODY only gets escaped: a pretty-printed JSON body is full
+// of newlines and tabs, and they are data. A URL and a header field
+// value are different -- a control character cannot appear in either
+// one legitimately (RFC 3986 §2: a URI is unreserved, reserved and
+// percent-encoded characters; RFC 9110 §5.5: a field value is visible
+// characters, SP and HTAB), so one arriving there is a caller's mistake
+// or an attempt, and curlDo refuses it by name rather than quietly
+// sending a request nobody asked for.
+//
+// It is deliberately the whole C0 range plus DEL, not just the five
+// curl can escape: NUL, ESC and form feed have no representation inside
+// a quoted directive at all.
+func curlConfigSafe(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func infinityRequireBinary(ctx context.Context, conn remoteexec.Connection, moduleName string) (Result, bool) {
