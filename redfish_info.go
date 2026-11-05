@@ -273,6 +273,12 @@ func moduleRedfishInfo(ctx context.Context, conn remoteexec.Connection, args map
 		}
 	}
 
+	if useGo, res, ok := redfishBackend("redfish_info", args); !ok {
+		return res, nil
+	} else if useGo {
+		return redfishInfoGo(ctx, args, categories, requestedCommands)
+	}
+
 	baseuri, username, password, res, ok := redfishtoolCredentials("redfish_info", args)
 	if !ok {
 		return res, nil
