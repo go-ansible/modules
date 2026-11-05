@@ -95,6 +95,11 @@ func realAnsible(t *testing.T, ansible, module string, bmc *interopBMC, args map
 	if err := json.Unmarshal([]byte(s[i+3:]), &res); err != nil {
 		t.Fatalf("real ansible result for %s is not JSON: %v\n%s", module, err, s)
 	}
+	// The ad-hoc printer says FAILED! in its header and leaves "failed" out of
+	// the JSON; the engine's result carries it.
+	if strings.Contains(s[:i], "FAILED!") {
+		res["failed"] = true
+	}
 	return res
 }
 
@@ -274,7 +279,9 @@ func TestRedfishInfoAgainstRealAnsible(t *testing.T) {
 	for _, tree := range []string{mockbmc.TreeRackmount, mockbmc.TreeEmulator} {
 		for _, c := range redfishInfoInteropCases() {
 			c.tree = tree
-			name := tree + "/" + fmt.Sprint(c.args["category"], "/", c.args["command"])
+			cc := c.args["category"].([]any)[0].(string) + "/" + c.args["command"].([]any)[0].(string)
+			c.knownDiff = redfishInfoKnownDiffs[tree+"/"+cc]
+			name := tree + "/" + cc
 			t.Run(name, func(t *testing.T) { runInteropCase(t, ansible, c) })
 		}
 	}
@@ -287,12 +294,30 @@ func redfishInfoInteropCases() []interopCase {
 	for _, cat := range cats {
 		for _, cmd := range redfishInfoCategories[cat] {
 			cases = append(cases, interopCase{module: "redfish_info",
-				args: map[string]any{"category": []any{cat}, "command": []any{cmd}}, knownDiff: redfishInfoKnownDiffs[cat+"/"+cmd]})
+				args: map[string]any{"category": []any{cat}, "command": []any{cmd}}})
 		}
 	}
 	return cases
 }
 
 // redfishInfoKnownDiffs: where the go-redfish backend and real ansible
-// differ, path -> why. Empty means identical.
-var redfishInfoKnownDiffs = map[string]map[string]string{}
+// differ, tree/category/command -> path -> why. A row that is not listed is
+// identical. Every entry is a place where real ansible and go-redfish part
+// ways, and real is the oracle.
+var redfishInfoKnownDiffs = map[string]map[string]string{
+	"emulator-1u/Accounts/ListUsers": {
+		".msg":           "real crashes (KeyError 'Accounts': the emulator's AccountService has no Accounts link, real indexes it); go-redfish also finds Links.Accounts",
+		".redfish_facts": "go-redfish returns the user list where real fails",
+		".failed":        "real: task failed",
+	},
+	"emulator-1u/Accounts/GetAccountServiceConfig": {
+		".msg":           "real crashes (KeyError 'Accounts'), as for ListUsers",
+		".redfish_facts": "go-redfish returns the AccountService where real fails",
+		".failed":        "real: task failed",
+	},
+	"emulator-1u/Sessions/GetSessions": {
+		".msg":           "real: SessionCollection resource not found (the root has no Links.Sessions); go-redfish falls back to the default Sessions path",
+		".redfish_facts": "go-redfish returns an empty list where real fails",
+		".failed":        "real: task failed",
+	},
+}

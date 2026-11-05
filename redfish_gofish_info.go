@@ -2,7 +2,8 @@ package modules
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"strings"
 
 	"github.com/go-redfish/redfish"
 )
@@ -10,7 +11,10 @@ import (
 // redfishInfoGo is redfish_info on the go-redfish backend: every command of
 // redfishInfoCategories is mapped to the client function PARITY.md of
 // go-redfish names for it, and its answer is put in the shape real
-// community.general's redfish_info returns (redfish_facts.<key>).
+// community.general's redfish_info returns (redfish_facts.<key>, each value
+// a dict with ret, and entries or msg). The shapes were taken from real
+// ansible running against the same mock BMC (redfish_interop_test.go), not
+// from the module's documentation.
 func redfishInfoGo(ctx context.Context, args map[string]any, categories, requested []string) (Result, error) {
 	c, res, ok := redfishGoClient("redfish_info", args, 60)
 	if !ok {
@@ -31,7 +35,8 @@ func redfishInfoGo(ctx context.Context, args map[string]any, categories, request
 		for _, command := range commands {
 			key, v, err := redfishInfoGoOne(ctx, c, args, category, command)
 			if err != nil {
-				return redfishGoFail("redfish_info", err), nil
+				// Real fails the task with the service's own message, without a prefix.
+				return Fail(redfishGoCleanMsg(err)), nil
 			}
 			if key == "" {
 				return redfishGoUnsupported("redfish_info", category, command), nil
@@ -39,172 +44,220 @@ func redfishInfoGo(ctx context.Context, args map[string]any, categories, request
 			facts[key] = v
 		}
 	}
-	return Ok("").WithExtra("redfish_facts", facts), nil
+	// Real redfish_info's success result carries no msg key.
+	return Result{NoMsg: true}.WithExtra("redfish_facts", facts), nil
 }
 
-// perSystem runs fn on every system and aggregates the way real
-// aggregate_systems does: entries is a list of [{system_uri: uri}, value].
-func perSystem(ctx context.Context, c *redfish.Client, fn func(uri string) (any, error)) (any, error) {
-	uris, err := c.SystemURIs(ctx)
-	if err != nil {
-		return nil, err
+// redfishGoCleanMsg is the text of err without go-redfish's sentinel prefix
+// ("redfish: resource not found: UpdateService resource not found" is
+// "UpdateService resource not found", which is what real reports).
+func redfishGoCleanMsg(err error) string {
+	msg := err.Error()
+	for _, s := range []error{redfish.ErrNotFound, redfish.ErrUnsupported, redfish.ErrAuth} {
+		msg = strings.TrimPrefix(msg, s.Error()+": ")
 	}
+	return msg
+}
+
+func infoOK(entries any) map[string]any { return map[string]any{"ret": true, "entries": entries} }
+
+// perResource runs fn on every resource URI and aggregates the way real does
+// (aggregate_systems / aggregate_managers / get_multi_nic_inventory: entries
+// is a list of [{<uriKey>: uri}, value]). A resource that has none of what
+// fn reads (ErrUnsupported) is left out and makes ret false, as real's
+// aggregate does.
+func perResource(uris []string, uriKey string, fn func(uri string) (any, error)) (any, error) {
 	entries := []any{}
+	ret := true
 	for _, u := range uris {
 		v, err := fn(u)
+		if errors.Is(err, redfish.ErrUnsupported) {
+			ret = false
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, []any{map[string]any{"system_uri": u}, v})
+		entries = append(entries, []any{map[string]any{uriKey: u}, v})
 	}
-	return map[string]any{"entries": entries}, nil
+	return map[string]any{"ret": ret, "entries": entries}, nil
 }
-
-func perManager(ctx context.Context, c *redfish.Client, fn func(uri string) (any, error)) (any, error) {
-	uris, err := c.ManagerURIs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	entries := []any{}
-	for _, u := range uris {
-		v, err := fn(u)
-		if err != nil {
-			return nil, err
-		}
-		entries = append(entries, []any{map[string]any{"manager_uri": u}, v})
-	}
-	return map[string]any{"entries": entries}, nil
-}
-
-func entries(v any) any { return map[string]any{"entries": v} }
 
 func redfishInfoGoOne(ctx context.Context, c *redfish.Client, args map[string]any, category, command string) (string, any, error) {
+	sys := func(key, uriKey string, fn func(u string) (any, error)) (string, any, error) {
+		uris, err := c.SystemURIs(ctx)
+		if err != nil {
+			return key, nil, err
+		}
+		v, err := perResource(uris, uriKey, fn)
+		return key, v, err
+	}
+	mgr := func(key, uriKey string, fn func(u string) (any, error)) (string, any, error) {
+		uris, err := c.ManagerURIs(ctx)
+		if err != nil {
+			return key, nil, err
+		}
+		v, err := perResource(uris, uriKey, fn)
+		return key, v, err
+	}
+	list := func(key string, v any, err error) (string, any, error) {
+		if err != nil {
+			return key, nil, err
+		}
+		return key, infoOK(v), nil
+	}
+
 	switch category + "/" + command {
 	case "Service/CheckAvailability":
-		if _, err := c.Get(ctx, "/redfish"); err != nil {
-			return "", nil, err
+		r, err := c.Get(ctx, "/redfish/v1/")
+		if err != nil {
+			return "service", map[string]any{"ret": true, "available": false}, nil
 		}
-		return "service", map[string]any{"msg": "Service is available."}, nil
+		var root map[string]any
+		if err := r.JSON(&root); err != nil {
+			return "service", map[string]any{"ret": true, "available": false}, nil
+		}
+		picked := map[string]any{}
+		for _, k := range []string{"Id", "Name", "RedfishVersion", "Vendor", "ServiceIdentification", "ProtocolFeaturesSupported", "UUID"} {
+			if v, ok := root[k]; ok {
+				picked[k] = v
+			}
+		}
+		return "service", map[string]any{"ret": true, "available": true, "entries": picked}, nil
 
 	case "Systems/GetSystemInventory":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.SystemInventory(ctx, u) })
-		return "system", v, err
+		return sys("system", "system_uri", func(u string) (any, error) { return c.SystemInventory(ctx, u) })
 	case "Systems/GetBootOverride":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.BootOverrideOf(ctx, u) })
-		return "boot_override", v, err
+		return sys("boot_override", "system_uri", func(u string) (any, error) { return c.BootOverrideOf(ctx, u) })
 	case "Systems/GetPowerRestorePolicy":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.PowerRestorePolicy(ctx, u) })
-		return "power_restore_policy", v, err
+		return sys("power_restore_policy", "system_uri", func(u string) (any, error) { return c.PowerRestorePolicy(ctx, u) })
 	case "Systems/GetHealthReport":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.SystemHealthReport(ctx, u) })
-		return "health_report", v, err
+		return sys("health_report", "system_uri", func(u string) (any, error) { return c.SystemHealthReport(ctx, u) })
 	case "Systems/GetNicInventory":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.NICInventory(ctx, u) })
-		return "nic", v, err
+		return sys("nic", "resource_uri", func(u string) (any, error) { return c.NICInventory(ctx, u) })
 	case "Systems/GetVirtualMedia":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.VirtualMedia(ctx, u) })
-		return "virtual_media", v, err
+		return sys("virtual_media", "resource_uri", func(u string) (any, error) { return c.VirtualMedia(ctx, u) })
 	case "Systems/GetCpuInventory":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.CPUInventory(ctx, u) })
-		return "cpu", v, err
+		return sys("cpu", "system_uri", func(u string) (any, error) { return c.CPUInventory(ctx, u) })
 	case "Systems/GetMemoryInventory":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.MemoryInventory(ctx, u) })
-		return "memory", v, err
+		return sys("memory", "system_uri", func(u string) (any, error) { return c.MemoryInventory(ctx, u) })
 	case "Systems/GetBiosAttributes":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.BiosAttributes(ctx, u) })
-		return "bios_attribute", v, err
+		return sys("bios_attribute", "system_uri", func(u string) (any, error) { return c.BiosAttributes(ctx, u) })
 	case "Systems/GetBootOrder":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.BootOrder(ctx, u) })
-		return "boot_order", v, err
+		return sys("boot_order", "system_uri", func(u string) (any, error) { return c.BootOrder(ctx, u) })
 	case "Systems/GetStorageControllerInventory":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.StorageControllerInventory(ctx, u) })
-		return "storage_controller", v, err
+		return sys("storage_controller", "system_uri", func(u string) (any, error) { return c.StorageControllerInventory(ctx, u) })
 	case "Systems/GetDiskInventory":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.DiskInventory(ctx, u) })
-		return "disk", v, err
+		return sys("disk", "system_uri", func(u string) (any, error) { return c.DiskInventory(ctx, u) })
 	case "Systems/GetVolumeInventory":
-		v, err := perSystem(ctx, c, func(u string) (any, error) { return c.VolumeInventory(ctx, u) })
-		return "volume", v, err
+		return sys("volume", "system_uri", func(u string) (any, error) { return c.VolumeInventory(ctx, u) })
 
 	case "Chassis/GetChassisInventory":
 		v, err := c.ChassisInventory(ctx)
-		return "chassis", entries(v), err
+		return list("chassis", v, err)
 	case "Chassis/GetFanInventory":
 		v, err := c.FanInventory(ctx)
-		return "fan", entries(v), err
+		return list("fan", v, err)
 	case "Chassis/GetChassisPower":
 		v, err := c.ChassisPower(ctx)
-		return "chassis_power", entries(v), err
+		return list("chassis_power", v, err)
 	case "Chassis/GetHealthReport":
 		v, err := c.ChassisHealthReports(ctx)
-		return "health_report", entries(v), err
+		if err != nil {
+			return "health_report", nil, err
+		}
+		entries := []any{}
+		for _, p := range v {
+			entries = append(entries, []any{map[string]any{"chassis_uri": p["chassis_uri"]}, p["health"]})
+		}
+		return "health_report", infoOK(entries), nil
 	case "Chassis/GetChassisThermals":
 		v, err := c.ChassisThermals(ctx)
-		return "thermals", entries(v), err
+		return list("thermals", v, err)
 	case "Chassis/GetPsuInventory":
 		v, err := c.PSUInventory(ctx)
-		return "psu", entries(v), err
+		return list("psu", v, err)
 	case "Chassis/GetHPEThermalConfig":
 		v, err := c.HPEThermalConfig(ctx)
-		return "hpe_thermal_config", entries(v), err
+		if errors.Is(err, redfish.ErrUnsupported) {
+			return "hpe_thermal_config", map[string]any{"ret": false}, nil
+		}
+		return list("hpe_thermal_config", v, err)
 	case "Chassis/GetHPEFanPercentMin":
 		v, err := c.HPEFanPercentMin(ctx)
-		return "hpe_fan_percent_min", entries(v), err
+		if errors.Is(err, redfish.ErrUnsupported) {
+			return "hpe_fan_percent_min", map[string]any{"ret": false}, nil
+		}
+		return list("hpe_fan_percent_min", v, err)
 
 	case "Accounts/ListUsers":
 		v, err := c.ListUsers(ctx)
-		return "user", entries(v), err
+		return list("user", v, err)
 	case "Accounts/GetAccountServiceConfig":
 		v, err := c.AccountServiceConfig(ctx)
-		return "accountservice_config", entries(v), err
+		return list("accountservice_config", v, err)
 	case "Sessions/GetSessions":
 		v, err := c.GetSessions(ctx)
-		return "session", entries(v), err
+		return list("session", v, err)
 
 	case "Update/GetFirmwareInventory":
 		v, err := c.FirmwareInventory(ctx)
-		return "firmware", entries(v), err
+		return list("firmware", v, err)
 	case "Update/GetSoftwareInventory":
 		v, err := c.SoftwareInventory(ctx)
-		return "software", entries(v), err
+		return list("software", v, err)
 	case "Update/GetFirmwareUpdateCapabilities":
 		v, err := c.FirmwareUpdateCapabilities(ctx)
-		return "firmware_update_capabilities", map[string]any{"multipart_supported": v.MultipartSupported, "entries": v.Entries}, err
+		if err != nil {
+			return "firmware_update_capabilities", nil, err
+		}
+		return "firmware_update_capabilities", map[string]any{"ret": true, "multipart_supported": v.MultipartSupported, "entries": v.Entries}, nil
 
 	case "Manager/GetManagerInventory":
-		v, err := perManager(ctx, c, func(u string) (any, error) { return c.ManagerInventory(ctx, u) })
-		return "manager", v, err
+		return mgr("manager", "manager_uri", func(u string) (any, error) { return c.ManagerInventory(ctx, u) })
 	case "Manager/GetNetworkProtocols":
-		v, err := c.NetworkProtocols(ctx, mustManager(ctx, c))
-		return "network_protocols", entries(v), err
+		u, err := c.ResolveManager(ctx, "")
+		if err != nil {
+			return "network_protocols", nil, err
+		}
+		v, err := c.NetworkProtocols(ctx, u)
+		return list("network_protocols", v, err)
 	case "Manager/GetServiceIdentification":
-		v, err := c.ResolveServiceIdentification(ctx, argString(args, "manager", ""))
-		return "service_id", map[string]any{"entries": v}, err
+		u, err := c.ResolveServiceIdentification(ctx, argString(args, "manager", ""))
+		if err != nil {
+			return "service_id", nil, err
+		}
+		s, err := c.ServiceIdentification(ctx, u)
+		if err != nil {
+			return "service_id", nil, err
+		}
+		return "service_id", map[string]any{"ret": true, "service_identification": s}, nil
 	case "Manager/GetManagerNicInventory":
-		v, err := perManager(ctx, c, func(u string) (any, error) { return c.ManagerNICInventory(ctx, u) })
-		return "manager_nics", v, err
+		return mgr("manager_nics", "resource_uri", func(u string) (any, error) { return c.ManagerNICInventory(ctx, u) })
 	case "Manager/GetLogs":
-		v, err := c.Logs(ctx, mustManager(ctx, c), 0)
-		return "log", entries(v), err
+		u, err := c.ResolveManager(ctx, "")
+		if err != nil {
+			return "log", nil, err
+		}
+		v, err := c.Logs(ctx, u, 0)
+		if err != nil {
+			return "log", nil, err
+		}
+		logs := []any{}
+		for _, l := range v {
+			logs = append(logs, map[string]any{"Description": l.Description, "Entries": l.Entries})
+		}
+		return "log", infoOK(logs), nil
 	case "Manager/GetVirtualMedia":
-		v, err := perManager(ctx, c, func(u string) (any, error) { return c.VirtualMedia(ctx, u) })
-		return "virtual_media", v, err
+		return mgr("virtual_media", "resource_uri", func(u string) (any, error) { return c.VirtualMedia(ctx, u) })
 	case "Manager/GetHostInterfaces":
 		v, err := c.HostInterfaces(ctx)
-		return "host_interfaces", entries(v), err
+		if errors.Is(err, redfish.ErrNotFound) {
+			return "host_interfaces", map[string]any{"ret": false, "msg": "No HostInterface objects found"}, nil
+		}
+		return list("host_interfaces", v, err)
 	case "Manager/GetHealthReport":
-		v, err := perManager(ctx, c, func(u string) (any, error) { return c.ManagerHealthReport(ctx, u) })
-		return "health_report", v, err
+		return mgr("health_report", "manager_uri", func(u string) (any, error) { return c.ManagerHealthReport(ctx, u) })
 	}
 	return "", nil, nil
-}
-
-// mustManager resolves the manager the command acts on; an error is carried
-// as the empty URI, which the next call then reports.
-func mustManager(ctx context.Context, c *redfish.Client) string {
-	u, err := c.ResolveManager(ctx, "")
-	if err != nil {
-		return fmt.Sprintf("/redfish/v1/Managers/unresolved: %v", err)
-	}
-	return u
 }
