@@ -121,6 +121,45 @@ jobs:
           MODULES_REQUIRE_TERRAFORM: "1"
         run: go test ./...
 
+  # The go-redfish backend of redfish_command/config/info, compared with REAL
+  # ansible-core + community.general on the same mock BMC. community.general
+  # is pinned to the commit go-redfish's PARITY.md names as its oracle.
+  # ANSIBLE_REQUIRE turns a missing ansible into a failure: a skip here would
+  # look exactly like a pass.
+  redfish-interop:
+    name: redfish backend vs real ansible
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      ANSIBLE_REQUIRE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.3
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: ansible-core and community.general at the oracle commit
+        run: |
+          pip install ansible-core
+          mkdir -p "$RUNNER_TEMP/collections/ansible_collections/community"
+          git clone -q https://github.com/ansible-collections/community.general "$RUNNER_TEMP/collections/ansible_collections/community/general"
+          git -C "$RUNNER_TEMP/collections/ansible_collections/community/general" checkout -q 33e521d68de99cf9eac0dc42194a24457a0b6aea
+          echo "ANSIBLE_COLLECTIONS_PATH=$RUNNER_TEMP/collections" >> "$GITHUB_ENV"
+      - name: Test
+        run: go test -count=1 -run 'RedfishInfoAgainstRealAnsible|RedfishCommandAgainstRealAnsible|RedfishConfigAgainstRealAnsible|GoRedfish' .
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.3
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
   arch-native:
     name: arch ${{ matrix.label }}
     runs-on: ${{ matrix.os }}

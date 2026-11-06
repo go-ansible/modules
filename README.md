@@ -56,6 +56,32 @@ constructs rather than remote modules, and live in
 [`playbook`](https://github.com/go-ansible/playbook) — where real Ansible keeps
 them too.
 
+## Redfish: where the BMC request leaves from
+
+`redfish_command`, `redfish_config` and `redfish_info` run DMTF's `redfishtool`
+on the **target** through the connection by default, so the request to the BMC
+leaves from the target's network, as it does in real Ansible (which runs the
+module on the target). That is unchanged.
+
+An operator can instead ask for the in-process
+[go-redfish](https://github.com/go-redfish/redfish) client: the request then
+leaves from the **control node**, the connection is not used and `redfishtool`
+is not needed on the target. It is stated, never inferred from the connection.
+The switch is the argument `_goansible_redfish_backend: go-redfish`
+(`modules.RedfishBackendKey`), carried in the task arguments like
+`_ansible_diff`; its name is deliberately outside real Ansible's `_ansible_*`
+namespace. Any other value than `redfishtool` or `go-redfish` is refused.
+
+On that backend `auth_token` works (the default path refuses it, since
+redfishtool takes a token only on argv), every command of the three modules is
+implemented, `validate_certs` defaults to true and `ca_path` names the CA. The
+password and the token stay in this process's memory. Its results were
+compared with real `ansible-core` and `community.general` on the same mock BMC
+(`redfish_interop_test.go`; run with `ansible` on `PATH` and
+`ANSIBLE_COLLECTIONS_PATH` pointing at a `community.general` checkout; the test
+skips without them, and fails instead when `ANSIBLE_REQUIRE` is set); the rows
+where the two differ are listed, with the reason, in that file.
+
 ## Security
 
 A module here composes a shell command, so a value that reaches a command
