@@ -109,6 +109,53 @@ func TestRedfishDefaultBackendRefusesTokenAndPointsAtGoRedfish(t *testing.T) {
 	}
 }
 
+// Real's three credential constraints, with its wording, refused alike by
+// both backends -- the backend switch must change where the request leaves
+// from and nothing else. The username+auth_token case is the one v0.98.0
+// got wrong on the go-redfish path: the token silently won.
+func TestRedfishCredentialConstraintsOnBothBackends(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"username and auth_token", map[string]any{"username": "u", "password": "p", "auth_token": "t"},
+			"parameters are mutually exclusive: username|auth_token"},
+		{"username without password", map[string]any{"username": "u"},
+			"parameters are required together: username, password"},
+		{"password without username", map[string]any{"password": "p"},
+			"parameters are required together: username, password"},
+		{"neither", map[string]any{},
+			"one of the following is required: username, auth_token"},
+		{"an empty username is given", map[string]any{"username": ""},
+			"parameters are required together: username, password"},
+		{"baseuri with a scheme", map[string]any{"baseuri": "https://bmc", "username": "u", "password": "p"},
+			"redfish_info: baseuri must be host[:port], without a scheme"},
+	}
+	for _, tc := range cases {
+		args := map[string]any{"baseuri": "bmc", "category": []any{"Systems"}, "command": []any{"GetSystemInventory"}}
+		for k, v := range tc.args {
+			args[k] = v
+		}
+		_, _, _, res, ok := redfishtoolCredentials("redfish_info", args)
+		if ok || res.Msg != tc.want {
+			t.Errorf("redfishtool path, %s: ok=%v msg=%q, want %q", tc.name, ok, res.Msg, tc.want)
+		}
+		_, res, ok = redfishGoClient("redfish_info", args, 60)
+		if ok || res.Msg != tc.want {
+			t.Errorf("go-redfish path, %s: ok=%v msg=%q, want %q", tc.name, ok, res.Msg, tc.want)
+		}
+	}
+	// The control: a well-formed set passes both checks.
+	good := map[string]any{"baseuri": "bmc", "username": "u", "password": "p"}
+	if _, _, _, res, ok := redfishtoolCredentials("redfish_info", good); !ok {
+		t.Errorf("redfishtool path refused a good set: %q", res.Msg)
+	}
+	if _, res, ok := redfishGoClient("redfish_info", good, 60); !ok {
+		t.Errorf("go-redfish path refused a good set: %q", res.Msg)
+	}
+}
+
 func TestGoRedfishBackendCertificateIsVerified(t *testing.T) {
 	b := startInteropBMC(t, mockbmc.Options{})
 	args := goBackendArgs(b, map[string]any{"category": []any{"Systems"}, "command": []any{"GetSystemInventory"}})

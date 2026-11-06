@@ -67,10 +67,21 @@ An operator can instead ask for the in-process
 [go-redfish](https://github.com/go-redfish/redfish) client: the request then
 leaves from the **control node**, the connection is not used and `redfishtool`
 is not needed on the target. It is stated, never inferred from the connection.
-The switch is the argument `_goansible_redfish_backend: go-redfish`
-(`modules.RedfishBackendKey`), carried in the task arguments like
-`_ansible_diff`; its name is deliberately outside real Ansible's `_ansible_*`
-namespace. Any other value than `redfishtool` or `go-redfish` is refused.
+The switch is the key `_goansible_redfish_backend: go-redfish`
+(`modules.RedfishBackendKey`), which the engine passes in the module's args the
+way it passes `_ansible_diff`; its name is deliberately outside real Ansible's
+`_ansible_*` namespace. Any other value than `redfishtool` or `go-redfish` is
+refused. An engine that includes go-ansible/playbook#215 sets it from the
+variable `goansible_redfish_backend` (inventory, play vars or `-e`), which real
+Ansible ignores. Without that engine, the only way is a task argument, and a
+playbook using it is **not portable**: real Ansible refuses a parameter outside
+the module's argument_spec.
+
+Both backends check the arguments the way real does, with real's messages:
+`username` and `auth_token` are mutually exclusive, `username` and `password`
+go together, and one of `username` or `auth_token` is required. `baseuri` is a
+host (`host[:port]`), since real builds `https://` + `baseuri`; a value with
+a scheme is refused.
 
 On that backend `auth_token` works (the default path refuses it, since
 redfishtool takes a token only on argv), every command of the three modules is
