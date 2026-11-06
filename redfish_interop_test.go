@@ -321,3 +321,97 @@ var redfishInfoKnownDiffs = map[string]map[string]string{
 		".failed":        "real: task failed",
 	},
 }
+
+func TestRedfishCommandAgainstRealAnsible(t *testing.T) {
+	ansible := requireAnsible(t)
+	cmd := func(category string, commands []any, extra map[string]any) map[string]any {
+		a := map[string]any{"category": category, "command": commands}
+		for k, v := range extra {
+			a[k] = v
+		}
+		return a
+	}
+	bob := map[string]any{"new_username": "bob", "new_password": "Sup3rSecretPw!", "roleid": "Operator"}
+	var args []map[string]any
+	for _, p := range []string{"PowerOn", "PowerForceOff", "PowerGracefulRestart", "PowerReboot", "PowerCycle", "PowerFullPowerCycle"} {
+		args = append(args, cmd("Systems", []any{p}, nil))
+	}
+	args = append(args,
+		cmd("Systems", []any{"SetOneTimeBoot"}, map[string]any{"bootdevice": "Pxe"}),
+		cmd("Systems", []any{"EnableContinuousBootOverride"}, map[string]any{"bootdevice": "Cd", "boot_override_mode": "UEFI"}),
+		cmd("Systems", []any{"DisableBootOverride"}, nil),
+		cmd("Systems", []any{"IndicatorLedOn"}, nil),
+		cmd("Systems", []any{"IndicatorLedBlink"}, nil),
+		cmd("Systems", []any{"IndicatorLedOff"}, nil),
+		cmd("Chassis", []any{"IndicatorLedOn"}, nil),
+		cmd("Chassis", []any{"IndicatorLedBlink"}, nil),
+		cmd("Accounts", []any{"AddUser"}, bob),
+		cmd("Accounts", []any{"AddUser", "DisableUser"}, bob),
+		cmd("Accounts", []any{"AddUser", "DisableUser", "EnableUser"}, bob),
+		cmd("Accounts", []any{"AddUser", "UpdateUserRole"}, map[string]any{"new_username": "bob", "new_password": "Sup3rSecretPw!", "roleid": "ReadOnly"}),
+		cmd("Accounts", []any{"AddUser", "UpdateUserPassword"}, map[string]any{"new_username": "bob", "new_password": "An0therSecretPw!", "roleid": "Operator"}),
+		cmd("Accounts", []any{"AddUser", "UpdateUserName"}, map[string]any{"new_username": "bob", "new_password": "Sup3rSecretPw!", "roleid": "Operator", "update_username": "robert"}),
+		cmd("Accounts", []any{"AddUser", "DeleteUser"}, bob),
+		cmd("Accounts", []any{"UpdateAccountServiceProperties"}, map[string]any{"account_properties": map[string]any{"MinPasswordLength": 12}}),
+		cmd("Sessions", []any{"ClearSessions"}, nil),
+		cmd("Manager", []any{"GracefulRestart"}, nil),
+		cmd("Manager", []any{"PowerGracefulRestart"}, nil),
+		cmd("Manager", []any{"ClearLogs"}, nil),
+		cmd("Manager", []any{"ResetToDefaults"}, map[string]any{"reset_to_defaults_mode": "PreserveNetwork"}),
+		cmd("Systems", []any{"VirtualMediaInsert"}, map[string]any{"virtual_media": map[string]any{"image_url": "http://example.org/a.iso", "media_types": []any{"CD"}}}),
+		cmd("Systems", []any{"VirtualMediaEject"}, map[string]any{"virtual_media": map[string]any{"image_url": "http://example.org/a.iso"}}),
+		cmd("Update", []any{"SimpleUpdate"}, map[string]any{"update_image_uri": "https://example.org/fw.bin", "update_protocol": "HTTPS"}),
+		cmd("Systems", []any{"NoSuchCommand"}, nil),
+		cmd("NoSuchCategory", []any{"X"}, nil),
+	)
+	for _, tree := range []string{mockbmc.TreeRackmount, mockbmc.TreeEmulator} {
+		for _, a := range args {
+			name := tree + "/" + fmt.Sprint(a["category"], "/", a["command"])
+			c := interopCase{module: "redfish_command", args: a, tree: tree, knownDiff: redfishCommandKnownDiffs[name]}
+			t.Run(name, func(t *testing.T) { runInteropCase(t, ansible, c) })
+		}
+	}
+}
+
+// redfishCommandKnownDiffs: tree/category/[commands] -> path -> why.
+var redfishCommandKnownDiffs = func() map[string]map[string]string {
+	m := map[string]map[string]string{}
+	wording := "both fail; the wording of the HTTP error differs (real: 'HTTP Error 400 on POST request to ...', go-redfish: 'POST path answered 400: ...')"
+	for _, tree := range []string{"public-rackmount1", "emulator-1u"} {
+		for _, c := range []string{"PowerCycle", "PowerFullPowerCycle"} {
+			m[tree+"/Systems/["+c+"]"] = map[string]string{".msg": wording}
+		}
+	}
+	crash := map[string]string{
+		".msg": "real crashes (KeyError 'Accounts': the emulator's AccountService has no Accounts link); go-redfish also finds Links.Accounts",
+	}
+	crashOK := map[string]string{
+		".msg": "real crashes (KeyError 'Accounts') or fails; go-redfish succeeds", ".failed": "real: task failed",
+		".return_values": "only on success", ".session": "only on success",
+	}
+	for _, k := range []string{"AddUser", "AddUser DisableUser", "AddUser DisableUser EnableUser", "AddUser UpdateUserRole",
+		"AddUser UpdateUserPassword", "AddUser UpdateUserName"} {
+		m["emulator-1u/Accounts/["+k+"]"] = crash
+	}
+	m["emulator-1u/Accounts/[AddUser DeleteUser]"] = crashOK
+	m["emulator-1u/Accounts/[UpdateAccountServiceProperties]"] = map[string]string{
+		".msg": crashOK[".msg"], ".failed": "real: task failed", ".changed": "real: unchanged because failed",
+		".return_values": "only on success", ".session": "only on success",
+	}
+	m["emulator-1u/Sessions/[ClearSessions]"] = map[string]string{
+		".msg": "real: SessionCollection resource not found (no Links.Sessions); go-redfish falls back to the default path and succeeds", ".failed": "real: task failed",
+		".return_values": "only on success", ".session": "only on success",
+	}
+	m["public-rackmount1/Accounts/[AddUser UpdateUserPassword]"] = map[string]string{
+		".msg":           "real fails: its property check wants Password read back, which a BMC never returns; go-redfish treats Password as write-only (departure documented in go-redfish's README) and succeeds",
+		".failed":        "real: task failed",
+		".changed":       "real: unchanged because failed",
+		".return_values": "only on success", ".session": "only on success",
+	}
+	vm := map[string]string{".msg": "both fail; wording differs (real capitalised, go-redfish lower-case)"}
+	m["public-rackmount1/Systems/[VirtualMediaInsert]"] = vm
+	m["public-rackmount1/Systems/[VirtualMediaEject]"] = vm
+	m["emulator-1u/Systems/[VirtualMediaInsert]"] = vm
+	m["emulator-1u/Systems/[VirtualMediaEject]"] = vm
+	return m
+}()

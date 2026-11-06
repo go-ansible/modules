@@ -22,14 +22,11 @@ func redfishInfoGo(ctx context.Context, args map[string]any, categories, request
 	}
 	facts := map[string]any{}
 	for _, category := range categories {
-		if res, ok := redfishCheckCategory("redfish_info", category, redfishInfoCategories); !ok {
-			return res, nil
-		}
 		commands := requested
 		if len(commands) == 0 {
 			commands = []string{redfishInfoDefaultCommand[category]}
 		}
-		if res, ok := redfishCheckCommands("redfish_info", category, commands, redfishInfoCategories); !ok {
+		if res, ok := redfishGoValidate("redfish_info", nil, redfishInfoCategories, category, commands); !ok {
 			return res, nil
 		}
 		for _, command := range commands {

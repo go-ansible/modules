@@ -104,8 +104,8 @@ func redfishtoolCredentials(moduleName string, args map[string]any) (baseuri, us
 	if username == "" && password == "" && argString(args, "auth_token", "") != "" {
 		return "", "", "", Fail(moduleName + ": auth_token is not supported by this port's redfishtool substitution " +
 			"— no safe non-argv way to pass a session token was confirmed (see redfishtool_common.go's own doc " +
-			"comment); use username/password instead, or select the in-process go-redfish backend "+
-			"(`"+RedfishBackendKey+": "+RedfishBackendGoRedfish+"`), which accepts auth_token and keeps it in memory"), false
+			"comment); use username/password instead, or select the in-process go-redfish backend " +
+			"(`" + RedfishBackendKey + ": " + RedfishBackendGoRedfish + "`), which accepts auth_token and keeps it in memory"), false
 	}
 	return baseuri, username, password, Result{}, true
 }

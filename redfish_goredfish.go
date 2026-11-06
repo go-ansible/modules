@@ -120,3 +120,32 @@ func redfishGoUnsupported(module, category, command string) Result {
 	return Fail(fmt.Sprintf("%s: %s/%s is not available on the %s backend; omit %s to use redfishtool on the target",
 		module, category, command, RedfishBackendGoRedfish, RedfishBackendKey))
 }
+
+// redfishGoValidate checks category and commands the way real does and with
+// real's wording: no module-name prefix, the categories in the module's own
+// declaration order (a Python dict), the commands as a Python list.
+// redfish_info words it differently ("Invalid Command: X"), the other two
+// alike.
+func redfishGoValidate(module string, order []string, table map[string][]string, category string, commands []string) (Result, bool) {
+	valid, known := table[category]
+	if module == "redfish_info" {
+		for _, cmd := range commands {
+			if known && !stringSliceContains(valid, cmd) {
+				return Fail("Invalid Command: " + cmd), false
+			}
+		}
+		if !known {
+			return Fail("Invalid Category: " + category), false
+		}
+		return Result{}, true
+	}
+	if !known {
+		return Fail(fmt.Sprintf("Invalid Category '%s'. Valid Categories = %s", category, formatPyList(order))), false
+	}
+	for _, cmd := range commands {
+		if !stringSliceContains(valid, cmd) {
+			return Fail(fmt.Sprintf("Invalid Command '%s'. Valid Commands = %s", cmd, formatPyList(valid))), false
+		}
+	}
+	return Result{}, true
+}

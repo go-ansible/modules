@@ -44,10 +44,8 @@ type cmdOutcome struct {
 }
 
 func redfishCommandGo(ctx context.Context, args map[string]any, category string, commands []string) (Result, error) {
-	if res, ok := redfishCheckCategory("redfish_command", category, redfishCommandGoCategories); !ok {
-		return res, nil
-	}
-	if res, ok := redfishCheckCommands("redfish_command", category, commands, redfishCommandGoCategories); !ok {
+	if res, ok := redfishGoValidate("redfish_command", []string{"Systems", "Chassis", "Accounts", "Sessions", "Manager", "Update"},
+		redfishCommandGoCategories, category, commands); !ok {
 		return res, nil
 	}
 	c, res, ok := redfishGoClient("redfish_command", args, 60)
@@ -254,5 +252,6 @@ func statusMap(s redfish.UpdateStatus) map[string]any {
 	b, _ := json.Marshal(s)
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)
+	m["ret"] = true // real's update_status dict carries it
 	return m
 }
