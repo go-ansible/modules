@@ -415,3 +415,64 @@ var redfishCommandKnownDiffs = func() map[string]map[string]string {
 	m["emulator-1u/Systems/[VirtualMediaEject]"] = vm
 	return m
 }()
+
+func TestRedfishConfigAgainstRealAnsible(t *testing.T) {
+	ansible := requireAnsible(t)
+	cfg := func(category string, command string, extra map[string]any) map[string]any {
+		a := map[string]any{"category": category, "command": []any{command}}
+		for k, v := range extra {
+			a[k] = v
+		}
+		return a
+	}
+	args := []map[string]any{
+		cfg("Systems", "SetBiosDefaultSettings", nil),
+		cfg("Systems", "SetBiosAttributes", map[string]any{"bios_attributes": map[string]any{"ProcTurboMode": "Disabled"}}),
+		cfg("Systems", "SetBiosAttributes", map[string]any{"bios_attributes": map[string]any{"NoSuchAttr": "x"}}),
+		cfg("Systems", "SetBootOrder", map[string]any{"boot_order": []any{"Boot0002", "Boot0001"}}),
+		cfg("Systems", "SetDefaultBootOrder", nil),
+		cfg("Systems", "EnableSecureBoot", nil),
+		cfg("Systems", "SetSecureBoot", map[string]any{"secure_boot_enable": false}),
+		cfg("Systems", "SetPowerRestorePolicy", map[string]any{"power_restore_policy": "AlwaysOn"}),
+		cfg("Systems", "DeleteVolumes", map[string]any{"storage_subsystem_id": "RAID1", "volume_ids": []any{"Vol1"}}),
+		cfg("Systems", "CreateVolume", map[string]any{"storage_subsystem_id": "RAID1", "volume_details": map[string]any{
+			"RAIDType": "RAID1", "Name": "v2", "Drives": []any{"/redfish/v1/Systems/437XR1138R2/Storage/RAID1/Drives/Disk1", "/redfish/v1/Systems/437XR1138R2/Storage/RAID1/Drives/Disk2"}}}),
+		cfg("Manager", "SetNetworkProtocols", map[string]any{"network_protocols": map[string]any{"SSH": map[string]any{"ProtocolEnabled": false}}}),
+		cfg("Manager", "SetManagerNic", map[string]any{"nic_addr": "192.0.2.9", "nic_config": map[string]any{"IPv4StaticAddresses": map[string]any{"Address": "192.0.2.9"}}}),
+		cfg("Manager", "SetHostInterface", map[string]any{"hostinterface_config": map[string]any{"InterfaceEnabled": false}}),
+		cfg("Manager", "SetServiceIdentification", map[string]any{"service_id": "rack-7"}),
+		cfg("Sessions", "SetSessionService", map[string]any{"sessions_config": map[string]any{"SessionTimeout": 600}}),
+		cfg("Systems", "NoSuchCommand", nil),
+		cfg("NoSuchCategory", "X", nil),
+	}
+	for _, tree := range []string{mockbmc.TreeRackmount, mockbmc.TreeEmulator} {
+		for i, a := range args {
+			name := fmt.Sprintf("%s/%d-%v-%v", tree, i, a["category"], a["command"])
+			c := interopCase{module: "redfish_config", args: a, tree: tree, knownDiff: redfishConfigKnownDiffs[name]}
+			t.Run(name, func(t *testing.T) { runInteropCase(t, ansible, c) })
+		}
+	}
+}
+
+// redfishConfigKnownDiffs: tree/index-category-[command] -> path -> why.
+var redfishConfigKnownDiffs = func() map[string]map[string]string {
+	m := map[string]map[string]string{}
+	for _, tree := range []string{"public-rackmount1", "emulator-1u"} {
+		m[tree+"/1-Systems-[SetBiosAttributes]"] = map[string]string{".msg": "wording: real prints the attributes as a Python dict, go-redfish as JSON"}
+		m[tree+"/2-Systems-[SetBiosAttributes]"] = map[string]string{".warnings": "go-redfish warns about attributes the BIOS does not have; real says nothing"}
+		m[tree+"/9-Systems-[CreateVolume]"] = map[string]string{".msg": "both fail (mock: drive already in use); the wording of the HTTP error differs"}
+		m[tree+"/11-Manager-[SetManagerNic]"] = map[string]string{".msg": "both fail (no such NIC); wording differs"}
+	}
+	realBug := map[string]string{
+		".msg":    "real fails: GET Managers/None 404 (it resolves the manager from resource_id and gets None); go-redfish resolves the only manager and succeeds",
+		".failed": "real: task failed", ".changed": "real: unchanged because failed",
+	}
+	m["public-rackmount1/13-Manager-[SetServiceIdentification]"] = realBug
+	m["emulator-1u/13-Manager-[SetServiceIdentification]"] = realBug
+	crash := map[string]string{".msg": "both fail; real crashes (KeyError 'SecureBoot': the tree has no SecureBoot), go-redfish says SecureBoot resource not found"}
+	m["emulator-1u/5-Systems-[EnableSecureBoot]"] = crash
+	m["emulator-1u/6-Systems-[SetSecureBoot]"] = crash
+	m["emulator-1u/12-Manager-[SetHostInterface]"] = map[string]string{".msg": "both fail (no HostInterfaces); wording differs"}
+	m["emulator-1u/14-Sessions-[SetSessionService]"] = map[string]string{".msg": "both fail; real: SessionCollection resource not found, go-redfish: property not supported"}
+	return m
+}()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -148,4 +149,57 @@ func redfishGoValidate(module string, order []string, table map[string][]string,
 		}
 	}
 	return Result{}, true
+}
+
+// redfishGoMsg puts a go-redfish message in the wording real uses where the
+// two differ only in form: real names a resource by its absolute URL
+// (https://baseuri/redfish/...), and says "Modified" where go-redfish says
+// "Changed the properties of".
+func redfishGoMsg(args map[string]any, msg string) string {
+	msg = strings.Replace(msg, "Changed the properties of ", "Modified ", 1)
+	root := "https://" + argString(args, "baseuri", "")
+	for _, p := range []string{"Modified ", "Properties in "} {
+		msg = strings.Replace(msg, p+"/redfish/", p+root+"/redfish/", 1)
+	}
+	return msg
+}
+
+// pyRepr renders a value the way Python's repr does, which is how real
+// formats lists and dicts into its messages.
+func pyRepr(v any) string {
+	switch x := v.(type) {
+	case string:
+		return "'" + x + "'"
+	case bool:
+		if x {
+			return "True"
+		}
+		return "False"
+	case nil:
+		return "None"
+	case []string:
+		parts := make([]string, len(x))
+		for i, s := range x {
+			parts[i] = pyRepr(s)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []any:
+		parts := make([]string, len(x))
+		for i, s := range x {
+			parts[i] = pyRepr(s)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = pyRepr(k) + ": " + pyRepr(x[k])
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	}
+	return fmt.Sprint(v)
 }
