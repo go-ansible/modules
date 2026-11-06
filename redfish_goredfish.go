@@ -19,7 +19,7 @@ import (
 // so the BMC request leaves from the target's network, as it does in real
 // Ansible, where the module runs on the target. That default is unchanged.
 //
-// A task (or the engine, for a whole run) may instead ask for the
+// The operator may instead ask for the
 // go-redfish client (github.com/go-redfish/redfish), called IN-PROCESS from
 // the go-ansible process: the BMC request then leaves from the CONTROL
 // node, the connection is not used, and no redfishtool is needed on the
@@ -32,7 +32,26 @@ import (
 // module's argument_spec). The name is deliberately NOT in real Ansible's
 // `_ansible_*` namespace, so that it cannot be mistaken for, or collide
 // with, an internal real Ansible may define later.
+//
+// How it is set: an engine that includes go-ansible/playbook#215 passes it
+// from the variable goansible_redfish_backend (inventory, play vars, -e),
+// which real Ansible ignores. An engine without #215 does not pass it at
+// all; the only way left is then a task argument, which is NOT portable:
+// real Ansible refuses a parameter outside the module's argument_spec, so a
+// playbook using it fails there.
 const RedfishBackendKey = "_goansible_redfish_backend"
+
+// AcceptsRedfishBackend reports whether the module named (bare or FQCN) reads
+// RedfishBackendKey. The engine asks it, rather than keeping its own list, so
+// that a module that learns the key is reached without a change in another
+// repository.
+func AcceptsRedfishBackend(module string) bool {
+	switch NormalizeName(module) {
+	case "redfish_info", "redfish_command", "redfish_config":
+		return true
+	}
+	return false
+}
 
 // Values of RedfishBackendKey. The empty string, and "redfishtool", are the
 // default: redfishtool on the target through the connection.
@@ -69,13 +88,10 @@ func redfishBackend(module string, args map[string]any) (useGo bool, res Result,
 // validate_certs, ca_path). Credentials stay in this process's memory: they
 // go to go-redfish's Config, never to argv, a file or the environment.
 func redfishGoClient(module string, args map[string]any, defaultTimeout int) (*redfish.Client, Result, bool) {
+	if res, ok := redfishArgChecks(module, args); !ok {
+		return nil, res, false
+	}
 	baseuri := argString(args, "baseuri", "")
-	if baseuri == "" {
-		return nil, Fail(module + ": missing required argument: baseuri"), false
-	}
-	if strings.Contains(baseuri, "://") {
-		return nil, Fail(module + ": baseuri must be host[:port], without a scheme"), false
-	}
 	username := argString(args, "username", "")
 	password := argString(args, "password", "")
 	token := argString(args, "auth_token", "")
@@ -84,13 +100,12 @@ func redfishGoClient(module string, args map[string]any, defaultTimeout int) (*r
 		Timeout: time.Duration(argInt(args, "timeout", defaultTimeout)) * time.Second,
 		CAFile:  argString(args, "ca_path", ""),
 	}
-	switch {
-	case token != "":
+	// redfishArgChecks has made username+password and auth_token exclusive:
+	// exactly one of the two is in use here, never a silent choice.
+	if args["auth_token"] != nil {
 		cfg.Token = token
-	case username != "" || password != "":
+	} else {
 		cfg.Credentials = redfish.Static{User: username, Password: password}
-	default:
-		return nil, Fail(module + ": missing parameter(s) required: username and password, or auth_token"), false
 	}
 	if !argBool(args, "validate_certs", true) {
 		tr := http.DefaultTransport.(*http.Transport).Clone()

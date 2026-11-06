@@ -75,6 +75,9 @@ func realAnsible(t *testing.T, ansible, module string, bmc *interopBMC, args map
 	a := map[string]any{"baseuri": bmc.baseuri, "username": "admin", "password": "password"}
 	for k, v := range args {
 		a[k] = v
+		if v == nil { // nil removes a default: "not given"
+			delete(a, k)
+		}
 	}
 	js, err := json.Marshal(a)
 	if err != nil {
@@ -196,6 +199,9 @@ func runGoBackend(t *testing.T, bmc *interopBMC, module string, args map[string]
 		"ca_path": bmc.caFile, RedfishBackendKey: RedfishBackendGoRedfish}
 	for k, v := range args {
 		a[k] = v
+		if v == nil { // nil removes a default: "not given"
+			delete(a, k)
+		}
 	}
 	var res Result
 	var err error
@@ -272,6 +278,42 @@ func short2(v any) string {
 		return string(b[:1200]) + "..."
 	}
 	return string(b)
+}
+
+// The credential constraints real declares (mutually_exclusive,
+// required_together, required_one_of on username/password/auth_token),
+// checked against real on all three modules: the refusal and its wording
+// must be real's. nil removes the default username/password.
+func TestRedfishCredentialConstraintsAgainstRealAnsible(t *testing.T) {
+	ansible := requireAnsible(t)
+	// The secrets are values no message contains: real masks every
+	// occurrence of a no_log value in its output, so a password "password"
+	// or a token "t" turns "username, password" into "username, ********".
+	const pw, tok = "pw-7d1e5", "tok-9f3c2"
+	creds := map[string]map[string]any{
+		"username+auth_token":       {"password": pw, "auth_token": tok},
+		"username without password": {"password": nil},
+		"password without username": {"username": nil, "password": pw},
+		"neither":                   {"username": nil, "password": nil},
+	}
+	cmds := map[string]map[string]any{
+		"redfish_info":    {"category": []any{"Systems"}, "command": []any{"GetSystemInventory"}},
+		"redfish_command": {"category": "Systems", "command": []any{"PowerOn"}},
+		"redfish_config":  {"category": "Systems", "command": []any{"SetBiosDefaultSettings"}},
+	}
+	for module, base := range cmds {
+		for name, cr := range creds {
+			a := map[string]any{}
+			for k, v := range base {
+				a[k] = v
+			}
+			for k, v := range cr {
+				a[k] = v
+			}
+			c := interopCase{module: module, args: a, tree: mockbmc.TreeRackmount}
+			t.Run(module+"/"+name, func(t *testing.T) { runInteropCase(t, ansible, c) })
+		}
+	}
 }
 
 func TestRedfishInfoAgainstRealAnsible(t *testing.T) {

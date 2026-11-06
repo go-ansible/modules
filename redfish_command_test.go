@@ -10,7 +10,10 @@ import (
 
 func redfishArgs(extra map[string]any) map[string]any {
 	base := map[string]any{
-		"baseuri":  "https://bmc.example.com",
+		// A host, as real expects: it builds root_uri = f"https://{baseuri}"
+		// (redfish_command.py:1002), so a value with a scheme fails there.
+		// The redfishtool command lines below still read -r https://...
+		"baseuri":  "bmc.example.com",
 		"username": "admin",
 		"password": "secret",
 	}
@@ -222,7 +225,7 @@ func TestModuleRedfishCommandAuthTokenFailsLoud(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	res, err := moduleRedfishCommand(context.Background(), conn, map[string]any{
 		"category": "Systems", "command": []any{"PowerOn"},
-		"baseuri": "https://bmc.example.com", "auth_token": "sometoken",
+		"baseuri": "bmc.example.com", "auth_token": "sometoken",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +324,7 @@ func TestModuleRedfishCommandCreateSession(t *testing.T) {
 func TestModuleRedfishCommandCreateSessionMissingCredsFailsLoud(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{})
 	res, err := moduleRedfishCommand(context.Background(), conn, map[string]any{
-		"baseuri": "https://bmc.example.com", "category": "Sessions", "command": []any{"CreateSession"},
+		"baseuri": "bmc.example.com", "category": "Sessions", "command": []any{"CreateSession"},
 	})
 	if err != nil {
 		t.Fatal(err)
