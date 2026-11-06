@@ -90,6 +90,11 @@ func moduleRedfishCommand(ctx context.Context, conn remoteexec.Connection, args 
 	if len(commands) == 0 {
 		return Result{}, errArg("redfish_command: missing required argument: command")
 	}
+	if useGo, res, ok := redfishBackend("redfish_command", args); !ok {
+		return res, nil
+	} else if useGo {
+		return redfishCommandGo(ctx, args, category, commands)
+	}
 	if res, ok := redfishCheckCategory("redfish_command", category, redfishCommandCategories); !ok {
 		return res, nil
 	}

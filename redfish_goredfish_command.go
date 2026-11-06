@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/go-redfish/redfish"
 )
@@ -183,7 +184,7 @@ func redfishCommandGoOne(ctx context.Context, c *redfish.Client, args map[string
 		case command == "GracefulRestart", strings.HasPrefix(command, "Power"):
 			o, err := c.ManagerPower(ctx, u, command)
 			if err == nil && argBool(args, "wait", false) {
-				timeout := time_seconds(argInt(args, "wait_timeout", 120))
+				timeout := time.Duration(argInt(args, "wait_timeout", 120)) * time.Second
 				err = c.WaitAvailable(ctx, timeout/24, timeout/24, timeout)
 			}
 			return fromOutcome(o, err)

@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/go-ansible/facts v0.19.1
 	github.com/go-ansible/template v0.33.2
+	github.com/go-redfish/redfish v0.9.0
 	github.com/go-regexp/engine v0.3.2
 	github.com/go-remoteexec/transport v0.8.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -14,7 +15,6 @@ require (
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-encryptions/unixcrypt v0.2.0 // indirect
-	github.com/go-redfish/redfish v0.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
