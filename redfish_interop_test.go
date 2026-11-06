@@ -286,10 +286,14 @@ func short2(v any) string {
 // must be real's. nil removes the default username/password.
 func TestRedfishCredentialConstraintsAgainstRealAnsible(t *testing.T) {
 	ansible := requireAnsible(t)
+	// The secrets are values no message contains: real masks every
+	// occurrence of a no_log value in its output, so a password "password"
+	// or a token "t" turns "username, password" into "username, ********".
+	const pw, tok = "pw-7d1e5", "tok-9f3c2"
 	creds := map[string]map[string]any{
-		"username+auth_token":       {"auth_token": "t"},
+		"username+auth_token":       {"password": pw, "auth_token": tok},
 		"username without password": {"password": nil},
-		"password without username": {"username": nil},
+		"password without username": {"username": nil, "password": pw},
 		"neither":                   {"username": nil, "password": nil},
 	}
 	cmds := map[string]map[string]any{
