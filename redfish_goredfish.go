@@ -41,6 +41,18 @@ import (
 // playbook using it fails there.
 const RedfishBackendKey = "_goansible_redfish_backend"
 
+// AcceptsRedfishBackend reports whether the module named (bare or FQCN) reads
+// RedfishBackendKey. The engine asks it, rather than keeping its own list, so
+// that a module that learns the key is reached without a change in another
+// repository.
+func AcceptsRedfishBackend(module string) bool {
+	switch NormalizeName(module) {
+	case "redfish_info", "redfish_command", "redfish_config":
+		return true
+	}
+	return false
+}
+
 // Values of RedfishBackendKey. The empty string, and "redfishtool", are the
 // default: redfishtool on the target through the connection.
 const (
@@ -76,13 +88,10 @@ func redfishBackend(module string, args map[string]any) (useGo bool, res Result,
 // validate_certs, ca_path). Credentials stay in this process's memory: they
 // go to go-redfish's Config, never to argv, a file or the environment.
 func redfishGoClient(module string, args map[string]any, defaultTimeout int) (*redfish.Client, Result, bool) {
-	baseuri := argString(args, "baseuri", "")
-	if baseuri == "" {
-		return nil, Fail(module + ": missing required argument: baseuri"), false
-	}
 	if res, ok := redfishArgChecks(module, args); !ok {
 		return nil, res, false
 	}
+	baseuri := argString(args, "baseuri", "")
 	username := argString(args, "username", "")
 	password := argString(args, "password", "")
 	token := argString(args, "auth_token", "")

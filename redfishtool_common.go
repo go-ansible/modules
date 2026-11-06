@@ -92,25 +92,29 @@ func redfishtoolErrMsg(res remoteexec.Result) string {
 }
 
 // redfishArgChecks applies, on BOTH backends, the argument constraints real
-// redfish_info/redfish_command/redfish_config declare (redfish_info.py:476-484,
-// alike in the other two):
+// redfish_info/redfish_command/redfish_config declare (community.general at
+// 33e521d6: redfish_info.py:573-581, redfish_command.py:931-940,
+// redfish_config.py:433-442):
 //
 //	mutually_exclusive=[("username", "auth_token")]
 //	required_together=[("username", "password")]
 //	required_one_of=[("username", "auth_token")]
 //
-// in the order AnsibleModule checks them, with its wording and no module-name
-// prefix (as bitbucket.go does). A parameter counts as given when its key is
-// present with a non-null value, as in AnsibleModule, so an empty string is
-// given. It also refuses a baseuri with a scheme: real prepends "https://" and
-// fails later on https://https://host; refusing it here, alike on both
-// backends, means the backend switch changes where the request leaves from
-// and nothing else.
+// in the order AnsibleModule checks them -- mutually_exclusive, then the
+// required arguments (baseuri), then required_together, then required_one_of
+// -- with its wording and no module-name prefix (as bitbucket.go does). A
+// parameter counts as given when its key is present with a non-null value, as
+// in AnsibleModule, so an empty string is given. It also refuses a baseuri
+// with a scheme: real prepends "https://" and fails later on
+// https://https://host; refusing it here, alike on both backends, means the
+// backend switch changes where the request leaves from and nothing else.
 func redfishArgChecks(moduleName string, args map[string]any) (Result, bool) {
 	given := func(k string) bool { v, ok := args[k]; return ok && v != nil }
 	switch {
 	case given("username") && given("auth_token"):
 		return Fail("parameters are mutually exclusive: username|auth_token"), false
+	case argString(args, "baseuri", "") == "":
+		return Fail(moduleName + ": missing required argument: baseuri"), false
 	case given("username") != given("password"):
 		return Fail("parameters are required together: username, password"), false
 	case !given("username") && !given("auth_token"):
@@ -126,13 +130,10 @@ func redfishArgChecks(moduleName string, args map[string]any) (Result, bool) {
 // and fails loud if auth_token is used instead (see this file's own doc
 // comment on why that path isn't supported).
 func redfishtoolCredentials(moduleName string, args map[string]any) (baseuri, username, password string, res Result, ok bool) {
-	baseuri = argString(args, "baseuri", "")
-	if baseuri == "" {
-		return "", "", "", Fail(moduleName + ": missing required argument: baseuri"), false
-	}
 	if res, ok := redfishArgChecks(moduleName, args); !ok {
 		return "", "", "", res, false
 	}
+	baseuri = argString(args, "baseuri", "")
 	// Real builds root_uri = f"https://{baseuri}" (redfish_info.py:598,
 	// redfish_command.py:1002, redfish_config.py:498): baseuri is a host,
 	// and the scheme is always https. redfishtool is given the same URL.

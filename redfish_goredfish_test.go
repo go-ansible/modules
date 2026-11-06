@@ -131,6 +131,9 @@ func TestRedfishCredentialConstraintsOnBothBackends(t *testing.T) {
 			"parameters are required together: username, password"},
 		{"baseuri with a scheme", map[string]any{"baseuri": "https://bmc", "username": "u", "password": "p"},
 			"redfish_info: baseuri must be host[:port], without a scheme"},
+		// Real checks mutually_exclusive BEFORE the required arguments.
+		{"username+auth_token and no baseuri", map[string]any{"baseuri": nil, "username": "u", "password": "p", "auth_token": "t"},
+			"parameters are mutually exclusive: username|auth_token"},
 	}
 	for _, tc := range cases {
 		args := map[string]any{"baseuri": "bmc", "category": []any{"Systems"}, "command": []any{"GetSystemInventory"}}
@@ -153,6 +156,17 @@ func TestRedfishCredentialConstraintsOnBothBackends(t *testing.T) {
 	}
 	if _, res, ok := redfishGoClient("redfish_info", good, 60); !ok {
 		t.Errorf("go-redfish path refused a good set: %q", res.Msg)
+	}
+}
+
+func TestAcceptsRedfishBackend(t *testing.T) {
+	for name, want := range map[string]bool{
+		"redfish_info": true, "community.general.redfish_command": true, "redfish_config": true,
+		"command": false, "idrac_redfish_info": false, "": false,
+	} {
+		if got := AcceptsRedfishBackend(name); got != want {
+			t.Errorf("AcceptsRedfishBackend(%q) = %v, want %v", name, got, want)
+		}
 	}
 }
 
