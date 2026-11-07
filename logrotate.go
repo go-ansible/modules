@@ -19,9 +19,11 @@ import (
 // rotation-run result). Actually running logrotate is out of scope for
 // this module, same as it is for real community.general.logrotate.
 //
-// Args: name (string, required, aliased `config_name` upstream — this
-// port only accepts `name`, per this package's standing convention of
-// args already being resolved by the caller, see known_hosts.go);
+// Args: name (string, required) — `config_name` works too: real's alias
+// (logrotate.py:893) is resolved before dispatch, in aliases.go. The
+// "standing convention of args already being resolved by the caller" this
+// comment used to cite was asserted in four files and implemented in none,
+// until modules#110 was fixed;
 // config_dir (string, default "/etc/logrotate.d"); state (present|
 // absent, default "present"); enabled (bool) — false renames the
 // managed file to "<name>.disabled" instead of "<name>"; backup (bool,
