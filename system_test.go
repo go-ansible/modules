@@ -160,12 +160,24 @@ func TestModuleSystemdEnable(t *testing.T) {
 	}
 }
 
+// CHANGED 2026-11-07, while fixing #107/#108: this asserted a Go ERROR for an
+// invalid state. Real declares state with
+// `choices=['reloaded','restarted','started','stopped']`, and AnsibleModule
+// rejects a bad choice with fail_json — a FAILED RESULT carrying
+// "value of %s must be one of: %s, got: %s" (ansible-core 2.21.4,
+// `module_utils/common/parameters.py:678`), not a crash. The old assertion
+// pinned this port's own divergence, so it is the assertion that was wrong.
 func TestModuleSystemdUnknownState(t *testing.T) {
 	conn := newFakeConn(map[string]remoteexec.Result{
 		"systemctl is-active nginx": {RC: 0},
 	})
-	if _, err := moduleSystemd(context.Background(), conn, map[string]any{"name": "nginx", "state": "bogus"}); err == nil {
-		t.Fatal("want error")
+	res, err := moduleSystemd(context.Background(), conn, map[string]any{"name": "nginx", "state": "bogus"})
+	if err != nil {
+		t.Fatalf("err = %v; real fails the task rather than erroring", err)
+	}
+	want := "value of state must be one of: reloaded, restarted, started, stopped, got: bogus"
+	if !res.Failed || res.Msg != want {
+		t.Errorf("msg = %q, want real's wording %q", res.Msg, want)
 	}
 }
 
