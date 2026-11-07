@@ -10,10 +10,11 @@ import (
 // module: adds or removes an SSH host key line in a known_hosts-style
 // file.
 //
-// Args: name (string, required) — the host (aliased from `host` in
-// real Ansible; this port only accepts `name`, since args here are
-// already resolved by the caller before reaching a module — see
-// module.go's doc comment); key (string, required when state=present)
+// Args: name (string, required) — the host, and `host` works too: the
+// alias real declares (known_hosts.py:363) is resolved before dispatch,
+// in aliases.go. This comment used to say args "are already resolved by
+// the caller", which nothing did until modules#110 was fixed; it is true
+// now, for the modules aliases.go lists; key (string, required when state=present)
 // — the full known_hosts line content (hostname/pattern plus key type
 // plus key data, exactly as it would appear in the file); path
 // (string, default "~/.ssh/known_hosts"); state (present|absent,

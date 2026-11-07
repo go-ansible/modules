@@ -194,6 +194,13 @@ func (r *Registry) Run(ctx context.Context, name string, conn remoteexec.Connect
 	if !ok {
 		return Fail(fmt.Sprintf("the module %s was not found", name)), nil
 	}
+	// Parameter aliases are resolved HERE, once, before any module body sees
+	// the arguments -- which is where real does it (AnsibleModule's own
+	// _handle_aliases runs during __init__, before the module's code). Doing
+	// it per module is what left `file: dest=...` failing on a missing
+	// `path` (#110) while several doc comments claimed the caller had
+	// already resolved them. See aliases.go.
+	args = resolveAliases(name, args)
 	res, err := fn(ctx, conn, args)
 	if err != nil {
 		return res, err

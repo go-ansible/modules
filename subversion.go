@@ -12,10 +12,12 @@ import (
 // a Subversion repository — the svn counterpart to git.go, following
 // its same shape.
 //
-// Args: repo (string, required — real subversion also accepts this as
-// `name`/`repository`; this port only accepts `repo`, since aliasing is
-// resolved by the caller before args reach a module — see module.go's
-// package doc comment); dest (string, required); revision (string,
+// Args: repo (string, required — `name` and `repository` work too, and
+// so do `rev`/`version` for revision: real's aliases (subversion.py:296-297)
+// are resolved before dispatch, in aliases.go. This comment used to say
+// aliasing "is resolved by the caller", which nothing did until modules#110
+// was fixed — and reading the spec to fix it turned up the REVISION aliases,
+// which no comment here mentioned); dest (string, required); revision (string,
 // default "HEAD" — a real svn revision keyword/number); export (bool,
 // default false) — export a clean tree with no .svn metadata instead
 // of a working checkout.
