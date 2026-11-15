@@ -83,7 +83,7 @@ var communityGeneralModules = []string{
 	"dnf_config_manager", "dnf_versionlock", "dnsimple", "dnsimple_info",
 	"dpkg_divert", "easy_install", "ejabberd_user", "elasticsearch_plugin",
 	"emc_vnx_sg_member", "etcd3", "facter_facts", "file_remove", "filesize",
-	"filesystem", "flatpak", "flatpak_remote", "gconftool2",
+	"filesystem", "flatpak", "flatpak_remote", "gandi_livedns", "gconftool2",
 	"gconftool2_info", "gem", "gio_mime", "git_config", "git_config_info",
 	"github_deploy_key", "github_issue", "github_key", "github_release",
 	"github_repo", "github_secrets", "github_secrets_info", "github_webhook",

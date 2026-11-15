@@ -120,6 +120,16 @@ var checkModeSupport = map[string]bool{
 	// a real run succeeds is worse than useless.
 	"ipbase_info": true,
 	"ipify_facts": true,
+
+	// gandi_livedns declares supports_check_mode=True in real, and every
+	// write in this port is behind the dry-run guard: the create, the
+	// update, the delete, and the subtract-to-a-remainder branch of
+	// state=absent. That last one is the reason this entry carries a
+	// comment at all -- real's own code reaches `update_record` there
+	// with NO check_mode guard, so a `--check` run against real edits a
+	// live DNS zone. The guard is this port's, and a test asserts that a
+	// dry run sends no PUT.
+	"gandi_livedns": true,
 }
 
 // Modules NOT listed above are skipped in check mode rather than run,
