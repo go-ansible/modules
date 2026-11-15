@@ -1,6 +1,6 @@
 module github.com/go-ansible/modules
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/go-ansible/facts v0.19.1
