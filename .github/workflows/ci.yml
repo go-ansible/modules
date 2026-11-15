@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.3
+          go-version-file: go.mod
       - run: go version
       # gofmt reports, it does not fail, so the check is the OUTPUT being
       # empty. A drifted file sat on main undetected until a local
@@ -53,7 +53,13 @@ jobs:
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "not gofmt'd:"; echo "$unformatted"
-            gofmt -d $unformatted
+            # `gofmt -d .` rather than `gofmt -d $unformatted`: the list is
+            # newline-separated, so passing it unquoted word-splits it and a
+            # path containing a space becomes two nonexistent files (SC2086),
+            # while quoting it passes one argument that is no filename at all.
+            # -d only prints a diff for files that need one, so recursing
+            # here reports exactly the files -l just listed.
+            gofmt -d .
             exit 1
           fi
       - run: go vet ./...
@@ -85,7 +91,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.3
+          go-version-file: go.mod
       - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
 
   # The modules that drive a real external binary, driven against the real
@@ -106,7 +112,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.3
+          go-version-file: go.mod
       - name: xorriso, which writes the image and reads it back
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso
       # terraform_wrapper: false — the wrapper is a shell script that shadows
@@ -136,7 +142,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.3
+          go-version-file: go.mod
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -157,7 +163,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.3
+          go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   arch-native:
@@ -173,7 +179,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.3
+          go-version-file: go.mod
       - run: go env GOARCH && CGO_ENABLED=0 go test ./...
 
   arch-qemu:
@@ -191,7 +197,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.3
+          go-version-file: go.mod
       # ⛔ `qemu-user-static` is a VIRTUAL package on Ubuntu 26.04, which
       # `ubuntu-latest` became on 2026-10-19, and apt refuses to choose between its
       # two providers:
