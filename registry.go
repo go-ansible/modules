@@ -1,6 +1,6 @@
 package modules
 
-//go:generate go run ./internal/gendocs
+//go:generate go run ./internal/gendocs/cmd/gendocs
 
 // registerBuiltins registers this package's built-in module set onto r.
 func registerBuiltins(r *Registry) {
