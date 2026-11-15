@@ -798,6 +798,10 @@ func registerBuiltins(r *Registry) {
 	// Cloudflare, via flarectl.
 	r.Register("cloudflare_dns", moduleCloudflareDns)
 
+	// Gandi LiveDNS, via its v5 HTTP API on curl -- Gandi ships no CLI
+	// for LiveDNS, which is also why real's module uses fetch_url.
+	r.Register("gandi_livedns", moduleGandiLivedns)
+
 	// OVHcloud, via ovhcloud-cli.
 	r.Register("ovh_ip_failover", moduleOvhIPFailover)
 	r.Register("ovh_ip_loadbalancing_backend", moduleOvhIPLoadbalancingBackend)
