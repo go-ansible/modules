@@ -127,6 +127,27 @@ jobs:
           MODULES_REQUIRE_TERRAFORM: "1"
         run: go test ./...
 
+  # systemd_creds_encrypt/decrypt against the real systemd-creds with the host
+  # key. A hosted runner has NO TPM, so the TPM2 options are covered only by
+  # the scripted command lines in systemd_creds_vtpm_test.go; this job proves
+  # the rest (real flags, real atomic write, real decrypt-and-compare).
+  # The test binary is built unprivileged and run under sudo: the host key
+  # lives in /var/lib/systemd and `systemd-creds setup` creates it.
+  systemd-creds:
+    name: real systemd-creds (host key, no TPM)
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: sudo systemd-creds setup
+      - run: go test -c -o "$RUNNER_TEMP/creds.test" .
+      - name: Run, with the real binary required
+        run: sudo MODULES_REQUIRE_SYSTEMD_CREDS=1 "$RUNNER_TEMP/creds.test" -test.run '^TestSystemdCredsRealHostKey$' -test.v
+
   # The go-redfish backend of redfish_command/config/info, compared with REAL
   # ansible-core + community.general on the same mock BMC. community.general
   # is pinned to the commit go-redfish's PARITY.md names as its oracle.

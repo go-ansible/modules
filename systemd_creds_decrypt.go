@@ -27,6 +27,17 @@ import (
 // page, since only ansible-doc — not systemd's own docs — was
 // available while implementing this batch); transcode
 // (base64|unbase64|hex|unhex) — `--transcode=<t>`.
+//
+// # Extensions (NOT in community.general)
+//
+// tpm2_device (--tpm2-device=, systemd v250) — an absolute device path on
+// the target, or "auto"; tpm2_signature (--tpm2-signature=, systemd v252) —
+// an absolute path on the target of a systemd-measure PCR signature file,
+// needed to decrypt a credential sealed with tpm2_public_key. Paths are
+// validated as in systemd_creds_encrypt.go. with_key and the other tpm2_*
+// options are encrypt-only: the man page says the key is recorded in the
+// credential. Neither is in the generated command line unless given.
+//
 // `systemd-creds decrypt` is invoked as `systemd-creds decrypt [flags]
 // - -` (both INPUT and OUTPUT positional arguments as "-", meaning
 // stdin/stdout).
@@ -61,18 +72,19 @@ func moduleSystemdCredsDecrypt(ctx context.Context, conn remoteexec.Connection, 
 	if tc := argString(args, "transcode", ""); tc != "" {
 		cmdArgs = append(cmdArgs, "--transcode="+tc)
 	}
+	tpmFlags, err := systemdCredsDecryptFlags("systemd_creds_decrypt", args)
+	if err != nil {
+		return Result{}, err
+	}
+	cmdArgs = append(cmdArgs, tpmFlags...)
 	cmdArgs = append(cmdArgs, "-", "-")
 
-	quoted := make([]string, len(cmdArgs))
-	for i, a := range cmdArgs {
-		quoted[i] = shellQuote(a)
-	}
-	res, err := conn.Exec(ctx, strings.Join(quoted, " "), strings.NewReader(secret))
+	res, err := conn.Exec(ctx, systemdCredsJoin(cmdArgs), strings.NewReader(secret))
 	if err != nil {
 		return Result{}, err
 	}
 	if res.RC != 0 {
-		return Fail("systemd_creds_decrypt: " + strings.TrimSpace(res.Stderr)), nil
+		return Fail(systemdCredsScrub("systemd_creds_decrypt: "+strings.TrimSpace(res.Stderr), secret)), nil
 	}
 	return Ok("").WithExtra("value", res.Stdout), nil
 }

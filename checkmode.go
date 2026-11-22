@@ -41,7 +41,11 @@ var checkModeSupport = map[string]bool{
 	"fail":  true,
 	"stat":  true,
 	"find":  true,
-	"slurp": true,
+
+	// Encrypts without writing unless dest is given; with dest, check mode
+	// reports the change and writes nothing (systemd_creds_encrypt.go).
+	"systemd_creds_encrypt": true,
+	"slurp":                 true,
 
 	// Notification senders, all four measured against their real
 	// sources: each declares supports_check_mode=True there, and each
